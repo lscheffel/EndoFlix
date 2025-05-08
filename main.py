@@ -3,6 +3,7 @@ import os
 import json
 from pathlib import Path
 import logging
+import shutil
 
 app = Flask(__name__)
 PLAYLISTS_FILE = "playlists.json"
