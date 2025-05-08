@@ -15,9 +15,10 @@ logging.basicConfig(level=logging.DEBUG)
 def get_media_files(folder):
     media = []
     folder_path = Path(folder)
-    for file in folder_path.rglob('*'):
-        if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']:
-            media.append(str(file))
+    if folder_path.exists() and folder_path.is_dir():
+        for file in folder_path.rglob('*'):
+            if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']:
+                media.append(str(file))
     return media
 
 def load_playlists():
@@ -73,8 +74,11 @@ def scan():
     folder_path = Path(folder)
     if folder_path.exists() and folder_path.is_dir():
         files = get_media_files(folder)
-        return jsonify({'files': files})
-    return jsonify({'error': 'Pasta inválida'}), 400
+        if files:
+            return jsonify({'files': files})
+        else:
+            return jsonify({'error': 'Nenhum arquivo de vídeo encontrado na pasta'}), 404
+    return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
 
 @app.route('/playlists', methods=['GET', 'POST'])
 def playlists():
@@ -100,4 +104,4 @@ def clear_cache():
     return jsonify({'success': True})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000)  

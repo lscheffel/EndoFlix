@@ -94,27 +94,27 @@
 
             // Forçar o layout 2x2
             videoContainers.forEach(container => {
-                container.classList.remove('col-12'); // Remove qualquer configuração que empilhe
-                container.classList.add('col-6'); // Garante o layout 2x2
+                container.classList.remove('col-12');
+                container.classList.add('col-6');
             });
         }
 
         divider.addEventListener('click', () => {
             if (isPlaylistVisible) {
-                playlistFrame.style.minWidth = '0'; // Permite que a largura vá a 0
-                playlistFrame.style.maxWidth = '0'; // Garante que a playlist suma completamente
+                playlistFrame.style.minWidth = '0';
+                playlistFrame.style.maxWidth = '0';
                 playlistFrame.style.width = '0';
                 playersFrame.style.width = '100%';
-                divider.style.background = '#777'; // Indica que a playlist está recolhida
+                divider.style.background = '#777';
             } else {
-                playlistFrame.style.minWidth = '24%'; // Restaura a largura fixa
+                playlistFrame.style.minWidth = '24%';
                 playlistFrame.style.maxWidth = '24%';
                 playlistFrame.style.width = '24%';
                 playersFrame.style.width = '76%';
-                divider.style.background = '#555'; // Volta ao estado normal
+                divider.style.background = '#555';
             }
             isPlaylistVisible = !isPlaylistVisible;
-            setTimeout(updatePlayerSizes, 300); // Dá tempo pra transição terminar
+            setTimeout(updatePlayerSizes, 300);
         });
 
         window.addEventListener('resize', updatePlayerSizes);
@@ -140,8 +140,10 @@
             const data = await response.json();
             if (data.files) {
                 updateFileList(data.files);
+                console.log('Arquivos carregados:', data.files); // Debug
             } else {
-                alert('Erro: ' + data.error);
+                alert('Erro: ' + (data.error || 'Falha ao carregar a pasta'));
+                console.error('Erro na resposta:', data.error); // Debug
             }
         }
 
@@ -208,17 +210,24 @@
         function updateFileList(files) {
             const list = document.getElementById('fileList');
             list.innerHTML = '';
-            files.forEach(file => {
-                const li = document.createElement('li');
-                li.className = 'list-group-item draggable';
-                li.draggable = true;
-                li.dataset.path = file;
-                li.textContent = file.split(/[\\/]/).pop();
-                li.addEventListener('dragstart', (e) => {
-                    e.dataTransfer.setData('text/plain', file);
+            if (files && files.length > 0) {
+                files.forEach(file => {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item draggable';
+                    li.draggable = true;
+                    li.dataset.path = file;
+                    li.textContent = file.split(/[\\/]/).pop();
+                    li.addEventListener('dragstart', (e) => {
+                        e.dataTransfer.setData('text/plain', file);
+                    });
+                    list.appendChild(li);
                 });
+            } else {
+                const li = document.createElement('li');
+                li.className = 'list-group-item';
+                li.textContent = 'Nenhum arquivo encontrado';
                 list.appendChild(li);
-            });
+            }
         }
 
         document.querySelectorAll('.video-player').forEach((player, index) => {
