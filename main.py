@@ -2,8 +2,8 @@ from flask import Flask, render_template, request, jsonify, send_file, Response
 import os
 import json
 from pathlib import Path
-import logging
 import shutil
+import logging
 
 app = Flask(__name__)
 PLAYLISTS_FILE = "playlists.json"
