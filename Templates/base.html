@@ -8,11 +8,16 @@
         body { overflow: hidden; }
         .divider { width: 10px; background: #555; cursor: pointer; }
         .divider:hover { background: #777; }
-        .playlist-frame { transition: width 0.3s; max-width: 24%; min-width: 24%; overflow-x: hidden; }
+        .playlist-frame { transition: width 0.3s; max-width: 20%; min-width: 20%; overflow-x: hidden; }
         .players-frame { transition: width 0.3s; }
         .video-container { position: relative; }
         .video-player { object-fit: contain; }
         .error-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); color: red; text-align: center; padding-top: 50px; display: none; }
+        .compact-control { margin-bottom: 5px !important; padding: 2px !important; font-size: 0.9em; }
+        .compact-btn { padding: 2px 5px !important; font-size: 0.9em; }
+        .btn-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .btn-row button { flex: 1; margin: 0 2px; }
+        .panic-btn { background-color: purple; padding: 5px !important; font-size: 1.2em; width: 100%; margin: 5px 0; }
     </style>
 </head>
 <body class="bg-dark text-light">
@@ -25,28 +30,28 @@
         </div>
     </header>
     <div class="d-flex" style="height: calc(100vh - 50px);">
-        <div class="players-frame" id="playersFrame" style="width: 76%;">
+        <div class="players-frame" id="playersFrame" style="width: 80%;">
             <div class="row h-100 m-0">
                 <div class="col-6 p-1 video-container">
-                    <video class="video-player" id="player1" controls preload="auto">
+                    <video class="video-player" id="player1" controls preload="auto" loop>
                         <source id="source1" type="video/mp4">
                         <div class="error-overlay" id="error1">Erro ao carregar o vídeo.</div>
                     </video>
                 </div>
                 <div class="col-6 p-1 video-container">
-                    <video class="video-player" id="player2" controls preload="auto">
+                    <video class="video-player" id="player2" controls preload="auto" loop>
                         <source id="source2" type="video/mp4">
                         <div class="error-overlay" id="error2">Erro ao carregar o vídeo.</div>
                     </video>
                 </div>
                 <div class="col-6 p-1 video-container">
-                    <video class="video-player" id="player3" controls preload="auto">
+                    <video class="video-player" id="player3" controls preload="auto" loop>
                         <source id="source3" type="video/mp4">
                         <div class="error-overlay" id="error3">Erro ao carregar o vídeo.</div>
                     </video>
                 </div>
                 <div class="col-6 p-1 video-container">
-                    <video class="video-player" id="player4" controls preload="auto">
+                    <video class="video-player" id="player4" controls preload="auto" loop>
                         <source id="source4" type="video/mp4">
                         <div class="error-overlay" id="error4">Erro ao carregar o vídeo.</div>
                     </video>
@@ -54,21 +59,36 @@
             </div>
         </div>
         <div class="divider" id="divider"></div>
-        <div class="playlist-frame" id="playlistFrame" style="width: 24%;">
+        <div class="playlist-frame" id="playlistFrame" style="width: 20%;">
             <div class="p-2">
-                <input type="text" id="folderInput" class="form-control mb-2" placeholder="Digite o caminho da pasta (ex.: C:\Videos)">
-                <button onclick="scanFolder()" class="btn btn-primary mb-2">Carregar Pasta</button>
-                <select id="playlistSelect" class="form-select mb-2">
+                <input type="text" id="folderInput" class="form-control compact-control" placeholder="Caminho da pasta (ex.: C:\Videos)">
+                <button onclick="scanFolder()" class="btn btn-primary compact-btn compact-control">Carregar Pasta</button>
+                <select id="playlistSelect" class="form-select compact-control" onchange="loadSelectedPlaylist()">
                     <option value="">Selecionar Playlist</option>
                 </select>
-                <input type="text" id="filterInput" class="form-control mb-2" placeholder="Filtrar por nome">
-                <select id="sortSelect" class="form-select mb-2">
+                <input type="text" id="filterInput" class="form-control compact-control" placeholder="Filtrar por nome">
+                <select id="sortSelect" class="form-select compact-control">
                     <option value="name">A-Z</option>
                     <option value="date">Data</option>
                 </select>
-                <ul id="fileList" class="list-group mb-2" style="max-height: 50vh; overflow-y: auto;"></ul>
-                <button id="savePlaylist" class="btn btn-primary mb-2">Salvar Playlist</button>
-                <button id="clearCache" class="btn btn-danger">Limpar Cache</button>
+                <ul id="fileList" class="list-group compact-control" style="max-height: 50vh; overflow-y: auto;"></ul>
+                <div class="btn-row">
+                    <button id="savePlaylist" class="btn btn-primary compact-btn">Save</button>
+                    <button id="clearDeck" class="btn btn-warning compact-btn">Clear</button>
+                </div>
+                <div class="btn-row">
+                    <button id="wishMeLuck" class="btn btn-success compact-btn">Shuffle</button>
+                    <button id="randomSequence" class="btn btn-info compact-btn">Sequency</button>
+                </div>
+                <div class="btn-row">
+                    <label>
+                        <input type="checkbox" id="autoShuffleCheckbox" class="me-2"> Auto Shuffle
+                    </label>
+                    <input type="number" id="autoShuffleInterval" class="form-control compact-control" min="1" value="3" style="width: 60px;">
+                </div>
+                <div class="text-center">
+                    <button id="panicBtn" class="btn panic-btn">Pânico</button>
+                </div>
             </div>
         </div>
     </div>
@@ -79,11 +99,14 @@
         const divider = document.getElementById('divider');
         const videoContainers = document.querySelectorAll('.video-container');
         let isPlaylistVisible = true;
+        let currentFiles = [];
+        let autoShuffleIntervalId = null;
 
         function updatePlayerSizes() {
             const frameWidth = playersFrame.offsetWidth;
-            const playerWidth = frameWidth / 2; // 2 colunas no layout 2x2
-            const playerHeight = playerWidth * 9 / 16; // Proporção 16:9
+            const frameHeight = playersFrame.offsetHeight;
+            const playerWidth = frameWidth / 2;
+            const playerHeight = Math.min(playerWidth * 9 / 16, frameHeight / 2);
 
             videoContainers.forEach(container => {
                 container.style.width = `${playerWidth}px`;
@@ -92,7 +115,6 @@
                 container.querySelector('.video-player').style.height = `${playerHeight}px`;
             });
 
-            // Forçar o layout 2x2
             videoContainers.forEach(container => {
                 container.classList.remove('col-12');
                 container.classList.add('col-6');
@@ -107,10 +129,10 @@
                 playersFrame.style.width = '100%';
                 divider.style.background = '#777';
             } else {
-                playlistFrame.style.minWidth = '24%';
-                playlistFrame.style.maxWidth = '24%';
-                playlistFrame.style.width = '24%';
-                playersFrame.style.width = '76%';
+                playlistFrame.style.minWidth = '20%';
+                playlistFrame.style.maxWidth = '20%';
+                playlistFrame.style.width = '20%';
+                playersFrame.style.width = '80%';
                 divider.style.background = '#555';
             }
             isPlaylistVisible = !isPlaylistVisible;
@@ -132,58 +154,175 @@
                 alert('Digite o caminho da pasta!');
                 return;
             }
-            const response = await fetch('/scan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ folder })
-            });
-            const data = await response.json();
-            if (data.files) {
-                updateFileList(data.files);
-                console.log('Arquivos carregados:', data.files); // Debug
-            } else {
-                alert('Erro: ' + (data.error || 'Falha ao carregar a pasta'));
-                console.error('Erro na resposta:', data.error); // Debug
+            try {
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder })
+                });
+                if (!response.ok) throw new Error(`Erro na resposta: ${response.statusText}`);
+                const data = await response.json();
+                if (data.files && data.files.length > 0) {
+                    currentFiles = data.files;
+                    updateFileList(currentFiles);
+                    document.getElementById('playlistSelect').value = '';
+                    console.log('Arquivos carregados:', data.files);
+                } else {
+                    alert('Erro: ' + (data.error || 'Nenhum arquivo encontrado'));
+                    console.error('Erro na resposta:', data.error);
+                    updateFileList([]);
+                }
+            } catch (error) {
+                alert('Erro ao escanear a pasta: ' + error.message);
+                console.error('Erro ao escanear:', error);
+                updateFileList([]);
             }
         }
 
         async function loadPlaylists() {
-            const response = await fetch('/playlists');
-            const playlists = await response.json();
-            const select = document.getElementById('playlistSelect');
-            select.innerHTML = '<option value="">Selecionar Playlist</option>';
-            for (const name in playlists) {
-                const option = document.createElement('option');
-                option.value = name;
-                option.textContent = name;
-                select.appendChild(option);
+            try {
+                const response = await fetch('/playlists');
+                const playlists = await response.json();
+                const select = document.getElementById('playlistSelect');
+                select.innerHTML = '<option value="">Selecionar Playlist</option>';
+                for (const name in playlists) {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    select.appendChild(option);
+                }
+            } catch (error) {
+                console.error('Erro ao carregar playlists:', error);
             }
         }
 
-        document.getElementById('playlistSelect').addEventListener('change', (e) => {
-            if (e.target.value) {
+        function loadSelectedPlaylist() {
+            const select = document.getElementById('playlistSelect');
+            const name = select.value;
+            if (name) {
                 fetch('/playlists').then(res => res.json()).then(playlists => {
-                    updateFileList(playlists[e.target.value]);
-                });
+                    currentFiles = playlists[name] || [];
+                    updateFileList(currentFiles);
+                }).catch(error => console.error('Erro ao carregar playlist:', error));
+            } else {
+                currentFiles = [];
+                updateFileList(currentFiles);
             }
-        });
+        }
+
+        document.getElementById('playlistSelect').addEventListener('change', loadSelectedPlaylist);
 
         document.getElementById('savePlaylist').addEventListener('click', async () => {
             const name = prompt('Nome da playlist:');
             if (name) {
                 const files = Array.from(document.querySelectorAll('#fileList li')).map(li => li.dataset.path);
-                await fetch('/playlists', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, files })
-                });
-                loadPlaylists();
+                if (files.length === 0) {
+                    alert('Nenhum arquivo para salvar na playlist!');
+                    return;
+                }
+                try {
+                    const response = await fetch('/playlists', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, files })
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        alert('Playlist salva com sucesso!');
+                        loadPlaylists();
+                    } else {
+                        alert('Erro ao salvar a playlist.');
+                    }
+                } catch (error) {
+                    alert('Erro ao salvar a playlist: ' + error.message);
+                    console.error('Erro ao salvar playlist:', error);
+                }
             }
         });
 
-        document.getElementById('clearCache').addEventListener('click', async () => {
-            await fetch('/clear_cache', { method: 'POST' });
-            alert('Cache limpo!');
+        document.getElementById('clearDeck').addEventListener('click', () => {
+            videoContainers.forEach((container, index) => {
+                const player = container.querySelector('.video-player');
+                const source = document.getElementById(`source${index + 1}`);
+                source.src = '';
+                player.load();
+                player.pause();
+            });
+        });
+
+        document.getElementById('panicBtn').addEventListener('click', () => {
+            const sites = ['https://www.google.com', 'https://www.youtube.com', 'https://www.wikipedia.org'];
+            const randomSite = sites[Math.floor(Math.random() * sites.length)];
+            window.open(randomSite, '_blank');
+        });
+
+        document.getElementById('wishMeLuck').addEventListener('click', () => {
+            if (currentFiles.length === 0) {
+                alert('Nenhum arquivo disponível!');
+                return;
+            }
+            const shuffled = currentFiles.sort(() => 0.5 - Math.random()).slice(0, 4);
+            videoContainers.forEach((container, intervalIndex) => {
+                if (shuffled[intervalIndex]) {
+                    const player = container.querySelector('.video-player');
+                    const source = document.getElementById(`source${intervalIndex + 1}`);
+                    source.src = `/video/${encodeURIComponent(shuffled[intervalIndex])}`;
+                    player.load();
+                    player.play().catch(err => console.error('Erro ao tocar:', err));
+                }
+            });
+            startAutoShuffle('shuffle');
+        });
+
+        document.getElementById('randomSequence').addEventListener('click', () => {
+            if (currentFiles.length < 4) {
+                alert('Pelo menos 4 arquivos são necessários!');
+                return;
+            }
+            const sortedFiles = [...currentFiles].sort((a, b) => a.localeCompare(b));
+            const randomIndex = Math.floor(Math.random() * (sortedFiles.length - 3));
+            const sequence = sortedFiles.slice(randomIndex, randomIndex + 4);
+            videoContainers.forEach((container, intervalIndex) => {
+                if (sequence[intervalIndex]) {
+                    const player = container.querySelector('.video-player');
+                    const source = document.getElementById(`source${intervalIndex + 1}`);
+                    source.src = `/video/${encodeURIComponent(sequence[intervalIndex])}`;
+                    player.load();
+                    player.play().catch(err => console.error('Erro ao tocar:', err));
+                }
+            });
+            startAutoShuffle('sequence');
+        });
+
+        function startAutoShuffle(mode) {
+            const autoShuffleCheckbox = document.getElementById('autoShuffleCheckbox');
+            const intervalInput = document.getElementById('autoShuffleInterval');
+            if (autoShuffleCheckbox.checked) {
+                if (autoShuffleIntervalId) clearInterval(autoShuffleIntervalId);
+                const interval = parseInt(intervalInput.value) * 1000 || 3000;
+                autoShuffleIntervalId = setInterval(() => {
+                    if (mode === 'shuffle') {
+                        document.getElementById('wishMeLuck').click();
+                    } else if (mode === 'sequence') {
+                        document.getElementById('randomSequence').click();
+                    }
+                }, interval);
+            }
+        }
+
+        document.getElementById('autoShuffleCheckbox').addEventListener('change', (e) => {
+            if (!e.target.checked && autoShuffleIntervalId) {
+                clearInterval(autoShuffleIntervalId);
+                autoShuffleIntervalId = null;
+            }
+        });
+
+        document.getElementById('autoShuffleInterval').addEventListener('input', () => {
+            if (autoShuffleIntervalId) {
+                clearInterval(autoShuffleIntervalId);
+                const mode = document.activeElement.id === 'wishMeLuck' ? 'shuffle' : 'sequence';
+                startAutoShuffle(mode);
+            }
         });
 
         document.getElementById('filterInput').addEventListener('input', (e) => {
@@ -249,13 +388,12 @@
             });
             player.parentElement.addEventListener('dragover', (e) => e.preventDefault());
 
-            // Adicionar suporte ao fullscreen nativo
             player.addEventListener('dblclick', () => {
                 if (player.requestFullscreen) {
                     player.requestFullscreen();
-                } else if (player.webkitRequestFullscreen) { // Safari
+                } else if (player.webkitRequestFullscreen) {
                     player.webkitRequestFullscreen();
-                } else if (player.msRequestFullscreen) { // IE11
+                } else if (player.msRequestFullscreen) {
                     player.msRequestFullscreen();
                 }
             });

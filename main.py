@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, jsonify, send_file, Response
 import os
 import json
 from pathlib import Path
-import shutil
 import logging
 
 app = Flask(__name__)
@@ -15,10 +14,13 @@ logging.basicConfig(level=logging.DEBUG)
 def get_media_files(folder):
     media = []
     folder_path = Path(folder)
-    if folder_path.exists() and folder_path.is_dir():
-        for file in folder_path.rglob('*'):
-            if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']:
-                media.append(str(file))
+    if not folder_path.exists() or not folder_path.is_dir():
+        app.logger.error(f"Pasta inválida: {folder}")
+        return media
+    for file in folder_path.rglob('*'):
+        if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']:
+            media.append(str(file))
+            app.logger.debug(f"Arquivo encontrado: {file}")
     return media
 
 def load_playlists():
@@ -26,11 +28,16 @@ def load_playlists():
         with open(PLAYLISTS_FILE, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
+        app.logger.warning(f"Arquivo {PLAYLISTS_FILE} não encontrado, criando novo.")
         return {}
 
 def save_playlists(playlists):
-    with open(PLAYLISTS_FILE, 'w') as f:
-        json.dump(playlists, f, indent=4)
+    try:
+        with open(PLAYLISTS_FILE, 'w') as f:
+            json.dump(playlists, f, indent=4)
+        app.logger.debug(f"Playlists salvas em {PLAYLISTS_FILE}")
+    except Exception as e:
+        app.logger.error(f"Erro ao salvar playlists: {e}")
 
 def serve_video_range(input_path):
     range_header = request.headers.get('Range', None)
@@ -71,13 +78,17 @@ def index():
 @app.route('/scan', methods=['POST'])
 def scan():
     folder = request.json.get('folder')
+    app.logger.debug(f"Recebido pedido para escanear pasta: {folder}")
     folder_path = Path(folder)
     if folder_path.exists() and folder_path.is_dir():
         files = get_media_files(folder)
         if files:
+            app.logger.info(f"Encontrados {len(files)} arquivos na pasta {folder}")
             return jsonify({'files': files})
         else:
+            app.logger.warning(f"Nenhum arquivo de vídeo encontrado na pasta {folder}")
             return jsonify({'error': 'Nenhum arquivo de vídeo encontrado na pasta'}), 404
+    app.logger.error(f"Pasta inválida ou não encontrada: {folder}")
     return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
 
 @app.route('/playlists', methods=['GET', 'POST'])
@@ -96,12 +107,5 @@ def serve_video(filename):
     input_path = Path(filename).as_posix()
     return serve_video_range(input_path)
 
-@app.route('/clear_cache', methods=['POST'])
-def clear_cache():
-    if TRANSCODE_DIR.exists():
-        shutil.rmtree(TRANSCODE_DIR)
-        TRANSCODE_DIR.mkdir(exist_ok=True)
-    return jsonify({'success': True})
-
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)  
+    app.run(debug=True, port=5000)
