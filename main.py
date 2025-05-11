@@ -259,7 +259,9 @@ def remove_session():
     finally:
         cur.close()
         conn.close()
-
+@app.route('/keymaps')
+def keymaps():
+    return render_template('keymaps.html')
 @app.route('/favorites', methods=['GET', 'POST', 'DELETE'])
 def favorites():
     conn = get_db_connection()
