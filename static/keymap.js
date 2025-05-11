@@ -1,3 +1,5 @@
+let isAllPaused = false;
+
 document.addEventListener('keydown', (e) => {
     const videoContainers = document.querySelectorAll('.video-container');
     if (e.key === 's' || e.key === 'S') {
@@ -19,7 +21,7 @@ document.addEventListener('keydown', (e) => {
         } else if (player.msRequestFullscreen) {
             player.msRequestFullscreen();
         }
-        showToast('Player 1 em tela cheia!', false);
+        showNotification('Player 1 em tela cheia!', false);
     } else if (e.key === 'w' || e.key === 'W') {
         const player = document.getElementById('player2');
         if (player.requestFullscreen) {
@@ -29,7 +31,7 @@ document.addEventListener('keydown', (e) => {
         } else if (player.msRequestFullscreen) {
             player.msRequestFullscreen();
         }
-        showToast('Player 2 em tela cheia!', false);
+        showNotification('Player 2 em tela cheia!', false);
     } else if (e.key === 'e' || e.key === 'E') {
         const player = document.getElementById('player3');
         if (player.requestFullscreen) {
@@ -39,7 +41,7 @@ document.addEventListener('keydown', (e) => {
         } else if (player.msRequestFullscreen) {
             player.msRequestFullscreen();
         }
-        showToast('Player 3 em tela cheia!', false);
+        showNotification('Player 3 em tela cheia!', false);
     } else if (e.key === 'r' || e.key === 'R') {
         const player = document.getElementById('player4');
         if (player.requestFullscreen) {
@@ -49,7 +51,7 @@ document.addEventListener('keydown', (e) => {
         } else if (player.msRequestFullscreen) {
             player.msRequestFullscreen();
         }
-        showToast('Player 4 em tela cheia!', false);
+        showNotification('Player 4 em tela cheia!', false);
     } else if (e.key === 'm' || e.key === 'M') {
         let allMuted = true;
         videoContainers.forEach(container => {
@@ -60,13 +62,28 @@ document.addEventListener('keydown', (e) => {
             const player = container.querySelector('.video-player');
             player.muted = !allMuted;
         });
-        showToast(allMuted ? 'Som ativado!' : 'Som desativado!', false);
-    } else if (e.key === ' ') {
-        videoContainers.forEach(container => {
-            const player = container.querySelector('.video-player');
-            player.pause();
-        });
-        showToast('Todos os players pausados!', false);
+        showNotification(allMuted ? 'Som ativado!' : 'Som desativado!', false);
+    } else if (e.key === 'p' || e.key === 'P') {
+        if (!isAllPaused) {
+            videoContainers.forEach(container => {
+                const player = container.querySelector('.video-player');
+                player.pause();
+            });
+            showNotification('Todos os players pausados!', false);
+        } else {
+            videoContainers.forEach(container => {
+                const player = container.querySelector('.video-player');
+                const source = container.querySelector('source');
+                if (source.src && player.paused) {
+                    player.play().catch(err => {
+                        console.error(`Erro ao tocar player ${player.id}:`, err);
+                        showNotification(`Erro ao tocar ${player.id}!`, true);
+                    });
+                }
+            });
+            showNotification('Todos os players tocando!', false);
+        }
+        isAllPaused = !isAllPaused;
     } else if (e.key === "'") {
         document.getElementById('panicBtn').click();
     } else if (e.key === 'c' || e.key === 'C') {
@@ -77,7 +94,7 @@ document.addEventListener('keydown', (e) => {
             const file = decodeURIComponent(source.src.split('/video/')[1]);
             toggleFavorite(file);
         } else {
-            showToast('Nenhum vídeo no player 1!', true);
+            showNotification('Nenhum vídeo no player 1!', true);
         }
     } else if (e.key === '6') {
         const source = document.getElementById('source2');
@@ -85,7 +102,7 @@ document.addEventListener('keydown', (e) => {
             const file = decodeURIComponent(source.src.split('/video/')[1]);
             toggleFavorite(file);
         } else {
-            showToast('Nenhum vídeo no player 2!', true);
+            showNotification('Nenhum vídeo no player 2!', true);
         }
     } else if (e.key === '7') {
         const source = document.getElementById('source3');
@@ -93,7 +110,7 @@ document.addEventListener('keydown', (e) => {
             const file = decodeURIComponent(source.src.split('/video/')[1]);
             toggleFavorite(file);
         } else {
-            showToast('Nenhum vídeo no player 3!', true);
+            showNotification('Nenhum vídeo no player 3!', true);
         }
     } else if (e.key === '8') {
         const source = document.getElementById('source4');
@@ -101,7 +118,7 @@ document.addEventListener('keydown', (e) => {
             const file = decodeURIComponent(source.src.split('/video/')[1]);
             toggleFavorite(file);
         } else {
-            showToast('Nenhum vídeo no player 4!', true);
+            showNotification('Nenhum vídeo no player 4!', true);
         }
     }
 });

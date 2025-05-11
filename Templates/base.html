@@ -23,6 +23,7 @@
         .favorite-btn { cursor: pointer; margin-right: 5px; }
         .played-indicator { margin-left: 5px; }
         .spinner-overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; display: none; }
+        #notification { font-size: calc(1rem - 1pt); }
     </style>
 </head>
 <body class="bg-dark text-light">
@@ -74,6 +75,7 @@
                 <button onclick="scanFolder()" class="btn btn-primary compact-btn compact-control">Carregar Pasta</button>
                 <select id="playlistSelect" class="form-select compact-control" onchange="loadSelectedPlaylist()">
                     <option value="">Selecionar Playlist</option>
+                    <option value="favorites">Favoritos</option>
                 </select>
                 <div class="btn-row">
                     <button id="savePlaylist" class="btn btn-primary compact-btn">Save Playlist</button>
@@ -226,7 +228,7 @@
                 } else {
                     showNotification(data.error || 'Nenhum arquivo encontrado', true);
                     console.error('Erro na resposta:', data.error);
-                    updateFileList([]);
+                    updateDRAMATICFileList([]);
                 }
             } catch (error) {
                 showNotification('Erro ao escanear a pasta: ' + error.message, true);
@@ -244,7 +246,7 @@
                 if (!response.ok) throw new Error(`Erro ao carregar playlists: ${response.statusText}`);
                 const playlists = await response.json();
                 const select = document.getElementById('playlistSelect');
-                select.innerHTML = '<option value="">Selecionar Playlist</option>';
+                select.innerHTML = '<option value="">Selecionar Playlist</option><option value="favorites">Favoritos</option>';
                 for (const name in playlists) {
                     const option = document.createElement('option');
                     option.value = name;
@@ -334,14 +336,22 @@
             }
             toggleSpinner(true);
             try {
-                const response = await fetch('/playlists');
-                if (!response.ok) throw new Error(`Erro ao carregar playlists: ${response.statusText}`);
-                const playlists = await response.json();
-                currentFiles = playlists[name].files.map(f => ({path: f, duration: playlists[name].play_count}));
-                playedVideos.clear();
-                updateFileList(currentFiles);
-                showNotification(`Playlist ${name} carregada com ${currentFiles.length} arquivos`, false);
-                console.log(`Playlist ${name} carregada com ${currentFiles.length} arquivos`);
+                if (name === 'favorites') {
+                    currentFiles = favorites.map(f => ({ path: f, duration: 0 }));
+                    playedVideos.clear();
+                    updateFileList(currentFiles);
+                    showNotification(`Favoritos carregados: ${currentFiles.length} arquivos`, false);
+                    console.log(`Favoritos carregados: ${currentFiles.length} arquivos`);
+                } else {
+                    const response = await fetch('/playlists');
+                    if (!response.ok) throw new Error(`Erro ao carregar playlists: ${response.statusText}`);
+                    const playlists = await response.json();
+                    currentFiles = playlists[name].files.map(f => ({path: f, duration: playlists[name].play_count}));
+                    playedVideos.clear();
+                    updateFileList(currentFiles);
+                    showNotification(`Playlist ${name} carregada com ${currentFiles.length} arquivos`, false);
+                    console.log(`Playlist ${name} carregada com ${currentFiles.length} arquivos`);
+                }
             } catch (error) {
                 showNotification('Erro ao carregar playlist: ' + error.message, true);
                 console.error('Erro ao carregar playlist:', error);
@@ -425,8 +435,8 @@
             try {
                 const select = document.getElementById('playlistSelect');
                 const name = select.value;
-                if (!name || name.trim() === '') {
-                    showNotification('Selecione uma playlist para remover!', true);
+                if (!name || name.trim() === '' || name === 'favorites') {
+                    showNotification('Selecione uma playlist válida para remover!', true);
                     return;
                 }
                 if (!confirm(`Deseja remover a playlist "${name}"?`)) {
