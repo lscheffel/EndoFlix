@@ -71,6 +71,10 @@
                 <select id="playlistSelect" class="form-select compact-control" onchange="loadSelectedPlaylist()">
                     <option value="">Selecionar Playlist</option>
                 </select>
+                <div class="btn-row">
+                    <button id="savePlaylist" class="btn btn-primary compact-btn">Save Playlist</button>
+                    <button id="removePlaylist" class="btn btn-danger compact-btn">Remove Playlist</button>
+                </div>
                 <select id="sessionSelect" class="form-select compact-control" onchange="loadSelectedSession()">
                     <option value="">Selecionar Sessão</option>
                 </select>
@@ -85,7 +89,6 @@
                 </select>
                 <ul id="fileList" class="list-group compact-control" style="max-height: 50vh; overflow-y: auto;"></ul>
                 <div class="btn-row">
-                    <button id="savePlaylist" class="btn btn-primary compact-btn">Save</button>
                     <button id="clearDeck" class="btn btn-warning compact-btn">Clear</button>
                 </div>
                 <div class="btn-row">
@@ -319,6 +322,42 @@
             } catch (error) {
                 console.error('Erro ao salvar playlist:', error);
                 alert('Erro ao salvar playlist: ' + error.message);
+            }
+        });
+
+        document.getElementById('removePlaylist').addEventListener('click', async () => {
+            try {
+                const select = document.getElementById('playlistSelect');
+                const name = select.value;
+                if (!name || name.trim() === '') {
+                    alert('Selecione uma playlist para remover!');
+                    return;
+                }
+                if (!confirm(`Deseja remover a playlist "${name}"?`)) {
+                    console.log('Exclusão de playlist cancelada');
+                    return;
+                }
+                console.log(`Removendo playlist: ${name}`);
+                const response = await fetch('/remove_playlist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const result = await response.json();
+                console.log('Resposta do servidor:', result);
+                if (result.success) {
+                    alert('Playlist removida com sucesso!');
+                    select.value = '';
+                    currentFiles = [];
+                    updateFileList([]);
+                    await loadPlaylists();
+                } else {
+                    console.error('Erro ao remover playlist:', result.error);
+                    alert(`Erro ao remover playlist: ${result.error || 'Erro desconhecido'}`);
+                }
+            } catch (error) {
+                console.error('Erro ao remover playlist:', error);
+                alert('Erro ao remover playlist: ' + error.message);
             }
         });
 

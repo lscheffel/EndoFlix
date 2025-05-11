@@ -141,6 +141,37 @@ def playlists():
         cur.close()
         conn.close()
 
+@app.route('/remove_playlist', methods=['POST'])
+def remove_playlist():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        data = request.get_json()
+        app.logger.debug(f"Dados recebidos para remover playlist: {data}")
+        name = data.get('name')
+        
+        # Validação
+        if not name or not isinstance(name, str) or name.strip() == '':
+            app.logger.error("Nome da playlist inválido ou não fornecido")
+            return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
+        
+        # Remover do banco
+        cur.execute("DELETE FROM endoflix_playlist WHERE name = %s", (name.strip(),))
+        if cur.rowcount > 0:
+            conn.commit()
+            app.logger.info(f"Playlist '{name}' removida com sucesso")
+            return jsonify({'success': True}), 200
+        else:
+            app.logger.warning(f"Playlist '{name}' não encontrada")
+            return jsonify({'success': False, 'error': 'Playlist não encontrada'}), 404
+    except Exception as e:
+        conn.rollback()
+        app.logger.error(f"Erro ao remover playlist: {str(e)}")
+        return jsonify({'success': False, 'error': f"Erro ao remover playlist: {str(e)}"}), 500
+    finally:
+        cur.close()
+        conn.close()
+
 @app.route('/sessions', methods=['GET', 'POST'])
 def sessions():
     conn = get_db_connection()
