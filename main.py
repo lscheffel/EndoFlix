@@ -74,6 +74,14 @@ def serve_video_range(input_path):
 def index():
     return render_template('base.html')
 
+@app.route('/about')
+def about():
+    return render_template('about.html')
+
+@app.route('/ultra')
+def ultra():
+    return render_template('ultra.html')
+
 @app.route('/scan', methods=['POST'])
 def scan():
     folder = request.json.get('folder')
@@ -98,7 +106,7 @@ def playlists():
         if request.method == 'GET':
             cur.execute("SELECT name, files FROM endoflix_playlist")
             playlists = {row[0]: row[1] for row in cur.fetchall()}
-            app.logger.debug(f"Playlists carregadas: {len(playlists)}")
+            app.logger.debug(f"Playlists carregadas: {len(playlists)} - Dados: {playlists}")
             return jsonify(playlists)
         elif request.method == 'POST':
             data = request.get_json()
@@ -141,7 +149,7 @@ def sessions():
         if request.method == 'GET':
             cur.execute("SELECT name, videos FROM endoflix_session")
             sessions = {row[0]: row[1] for row in cur.fetchall()}
-            app.logger.debug(f"Sessões carregadas: {len(sessions)}")
+            app.logger.debug(f"Sessões carregadas: {len(sessions)} - Dados: {sessions}")
             return jsonify(sessions)
         elif request.method == 'POST':
             data = request.get_json()
