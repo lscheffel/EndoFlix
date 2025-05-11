@@ -1,16 +1,18 @@
 EndoFlix - Video Player
+
 EndoFlix é um player de vídeos web robusto, construído com Flask e Bootstrap, para organizar e reproduzir arquivos de vídeo de forma prática e dinâmica. Escaneie pastas, crie playlists, salve sessões, randomize vídeos com shuffle (individual ou automático) e aproveite um layout com 4 players simultâneos, tudo integrado com PostgreSQL para gerenciamento de dados.
+
 Funcionalidades
 
 Escaneamento de Pastas: Carrega vídeos (.mp4, .mkv, .mov, .divx, .webm, .mpg, .avi) de qualquer diretório (ex.: X:\Tiktok).
 Playlists: Crie, salve e carregue playlists diretamente no banco PostgreSQL.
 Sessões: Salve e restaure sessões com os vídeos em reprodução.
+
 Shuffle Inteligente:
 Shuffle geral (4 vídeos aleatórios).
 Shuffles individuais por player.
 Auto Shuffle com intervalo configurável.
 Prioriza vídeos não reproduzidos.
-
 
 Drag-and-Drop: Arraste vídeos da lista para os players.
 Interface Moderna:
@@ -18,26 +20,22 @@ Layout com 4 players em grade 2x2.
 Barra lateral ajustável para playlists/sessões.
 Filtros por nome e ordenação (A-Z, data).
 
-
 Botão de Pânico: Abre um site aleatório (ex.: Google, YouTube) em caso de emergência.
 Logs Detalhados: Debug facilitado com logs no backend e frontend.
 
 Tecnologias
-
 Backend: Flask, Python, psycopg2 (PostgreSQL)
 Frontend: Bootstrap 5, JavaScript, HTML/CSS
 Banco de Dados: PostgreSQL
 Outros: Git para versionamento
 
 Requisitos
-
 Python 3.8+
 PostgreSQL (com usuário postgres, senha admin)
 Git
 Navegador moderno (Chrome, Firefox, Edge)
 
 Instalação
-
 Clone o repositório:
 git clone https://github.com/lscheffel/EndoFlix.git
 cd EndoFlix
