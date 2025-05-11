@@ -1,16 +1,30 @@
-from flask import Flask, render_template, request, jsonify, send_file, Response
+from flask import Flask, render_template, request, jsonify, Response
 import os
-import json
 from pathlib import Path
+import psycopg2
 import logging
 
 app = Flask(__name__)
-PLAYLISTS_FILE = "playlists.json"
-SESSIONS_FILE = "sessions.json"
 TRANSCODE_DIR = Path("transcode")
 
 # Configurar logging
 logging.basicConfig(level=logging.DEBUG)
+
+# Conexão com o PostgreSQL
+def get_db_connection():
+    try:
+        conn = psycopg2.connect(
+            dbname="videos",
+            user="postgres",
+            password="admin",
+            host="localhost",
+            port="5432"
+        )
+        app.logger.debug("Conexão com o banco estabelecida")
+        return conn
+    except Exception as e:
+        app.logger.error(f"Erro ao conectar ao banco: {e}")
+        raise
 
 def get_media_files(folder):
     media = []
@@ -23,40 +37,6 @@ def get_media_files(folder):
             media.append(str(file))
             app.logger.debug(f"Arquivo encontrado: {file}")
     return media
-
-def load_playlists():
-    try:
-        with open(PLAYLISTS_FILE, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        app.logger.warning(f"Arquivo {PLAYLISTS_FILE} não encontrado, criando novo.")
-        return {}
-
-def save_playlists(playlists):
-    try:
-        with open(PLAYLISTS_FILE, 'w') as f:
-            json.dump(playlists, f, indent=4)
-        app.logger.debug(f"Playlists salvas em {PLAYLISTS_FILE}")
-    except Exception as e:
-        app.logger.error(f"Erro ao salvar playlists: {e}")
-
-def load_sessions():
-    try:
-        with open(SESSIONS_FILE, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        app.logger.warning(f"Arquivo {SESSIONS_FILE} não encontrado, criando novo.")
-        return {}
-
-def save_sessions(sessions):
-    try:
-        with open(SESSIONS_FILE, 'w') as f:
-            json.dump(sessions, f, indent=4)
-        app.logger.debug(f"Sessões salvas em {SESSIONS_FILE}")
-        return True
-    except Exception as e:
-        app.logger.error(f"Erro ao salvar sessões: {e}")
-        return False
 
 def serve_video_range(input_path):
     range_header = request.headers.get('Range', None)
@@ -112,50 +92,117 @@ def scan():
 
 @app.route('/playlists', methods=['GET', 'POST'])
 def playlists():
-    if request.method == 'GET':
-        return jsonify(load_playlists())
-    elif request.method == 'POST':
-        data = request.get_json()
-        playlists = load_playlists()
-        playlists[data['name']] = data['files']
-        save_playlists(playlists)
-        return jsonify({'success': True})
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        if request.method == 'GET':
+            cur.execute("SELECT name, files FROM endoflix_playlist")
+            playlists = {row[0]: row[1] for row in cur.fetchall()}
+            app.logger.debug(f"Playlists carregadas: {len(playlists)}")
+            return jsonify(playlists)
+        elif request.method == 'POST':
+            data = request.get_json()
+            app.logger.debug(f"Dados recebidos para salvar playlist: {data}")
+            name = data.get('name')
+            files = data.get('files')
+            
+            # Validação
+            if not name or not isinstance(name, str) or name.strip() == '':
+                app.logger.error("Nome da playlist inválido ou não fornecido")
+                return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
+            if not files or not isinstance(files, list) or not all(isinstance(f, str) for f in files):
+                app.logger.error("Lista de arquivos inválida")
+                return jsonify({'success': False, 'error': 'Lista de arquivos inválida'}), 400
+            if len(files) == 0:
+                app.logger.error("Nenhum arquivo fornecido para a playlist")
+                return jsonify({'success': False, 'error': 'A playlist deve conter pelo menos um arquivo'}), 400
+            
+            # Salvar no banco
+            cur.execute(
+                "INSERT INTO endoflix_playlist (name, files) VALUES (%s, %s) ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files RETURNING id",
+                (name.strip(), files)
+            )
+            conn.commit()
+            app.logger.info(f"Playlist '{name}' salva com {len(files)} arquivos")
+            return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        app.logger.error(f"Erro ao gerenciar playlist: {str(e)}")
+        return jsonify({'success': False, 'error': f"Erro ao salvar playlist: {str(e)}"}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/sessions', methods=['GET', 'POST'])
 def sessions():
-    if request.method == 'GET':
-        return jsonify(load_sessions())
-    elif request.method == 'POST':
-        data = request.get_json()
-        sessions = load_sessions()
-        sessions[data['name']] = data['videos']
-        success = save_sessions(sessions)
-        return jsonify({'success': success})
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        if request.method == 'GET':
+            cur.execute("SELECT name, videos FROM endoflix_session")
+            sessions = {row[0]: row[1] for row in cur.fetchall()}
+            app.logger.debug(f"Sessões carregadas: {len(sessions)}")
+            return jsonify(sessions)
+        elif request.method == 'POST':
+            data = request.get_json()
+            app.logger.debug(f"Dados recebidos para salvar sessão: {data}")
+            name = data.get('name')
+            videos = data.get('videos')
+            
+            # Validação
+            if not name or not isinstance(name, str) or name.strip() == '':
+                app.logger.error("Nome da sessão inválido ou não fornecido")
+                return jsonify({'success': False, 'error': 'Nome da sessão é obrigatório'}), 400
+            if not videos or not isinstance(videos, list) or not all(isinstance(v, str) for v in videos):
+                app.logger.error("Lista de vídeos inválida")
+                return jsonify({'success': False, 'error': 'Lista de vídeos inválida'}), 400
+            
+            # Salvar no banco
+            cur.execute(
+                "INSERT INTO endoflix_session (name, videos) VALUES (%s, %s) ON CONFLICT (name) DO UPDATE SET videos = EXCLUDED.videos RETURNING id",
+                (name.strip(), videos)
+            )
+            conn.commit()
+            app.logger.info(f"Sessão '{name}' salva com {len(videos)} vídeos")
+            return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        app.logger.error(f"Erro ao gerenciar sessão: {str(e)}")
+        return jsonify({'success': False, 'error': f"Erro ao salvar sessão: {str(e)}"}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/remove_session', methods=['POST'])
 def remove_session():
-    data = request.get_json()
-    name = data.get('name')
-    app.logger.debug(f"Recebida requisição para remover sessão: {name}")
-    if not name:
-        app.logger.error("Nome da sessão não fornecido")
-        return jsonify({'success': False, 'error': 'Nome da sessão não fornecido'}), 400
-    
-    sessions = load_sessions()
-    if name in sessions:
-        try:
-            del sessions[name]
-            if save_sessions(sessions):
-                app.logger.info(f"Sessão {name} removida com sucesso")
-                return jsonify({'success': True}), 200
-            else:
-                app.logger.error("Falha ao salvar sessões após remoção")
-                return jsonify({'success': False, 'error': 'Falha ao salvar sessões'}), 500
-        except Exception as e:
-            app.logger.error(f"Erro ao remover sessão {name}: {str(e)}")
-            return jsonify({'success': False, 'error': f'Erro ao remover sessão: {str(e)}'}), 500
-    app.logger.warning(f"Sessão {name} não encontrada")
-    return jsonify({'success': False, 'error': 'Sessão não encontrada'}), 404
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        data = request.get_json()
+        app.logger.debug(f"Dados recebidos para remover sessão: {data}")
+        name = data.get('name')
+        
+        # Validação
+        if not name or not isinstance(name, str) or name.strip() == '':
+            app.logger.error("Nome da sessão inválido ou não fornecido")
+            return jsonify({'success': False, 'error': 'Nome da sessão é obrigatório'}), 400
+        
+        # Remover do banco
+        cur.execute("DELETE FROM endoflix_session WHERE name = %s", (name.strip(),))
+        if cur.rowcount > 0:
+            conn.commit()
+            app.logger.info(f"Sessão '{name}' removida com sucesso")
+            return jsonify({'success': True}), 200
+        else:
+            app.logger.warning(f"Sessão '{name}' não encontrada")
+            return jsonify({'success': False, 'error': 'Sessão não encontrada'}), 404
+    except Exception as e:
+        conn.rollback()
+        app.logger.error(f"Erro ao remover sessão: {str(e)}")
+        return jsonify({'success': False, 'error': f"Erro ao remover sessão: {str(e)}"}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/video/<path:filename>')
 def serve_video(filename):

@@ -66,7 +66,7 @@
         <div class="divider" id="divider"></div>
         <div class="playlist-frame" id="playlistFrame" style="width: 20%;">
             <div class="p-2">
-                <input type="text" id="folderInput" class="form-control compact-control" placeholder="Caminho da pasta (ex.: C:\Videos)">
+                <input type="text" id="folderInput" class="form-control compact-control" placeholder="Caminho da pasta (ex.: X:\Tiktok)">
                 <button onclick="scanFolder()" class="btn btn-primary compact-btn compact-control">Carregar Pasta</button>
                 <select id="playlistSelect" class="form-select compact-control" onchange="loadSelectedPlaylist()">
                     <option value="">Selecionar Playlist</option>
@@ -118,7 +118,7 @@
         const videoContainers = document.querySelectorAll('.video-container');
         let isPlaylistVisible = true;
         let currentFiles = [];
-        let playedVideos = new Set(); // Histórico de vídeos tocados
+        let playedVideos = new Set();
         let autoShuffleIntervalId = null;
 
         function updatePlayerSizes() {
@@ -178,10 +178,10 @@
                 const data = await response.json();
                 if (data.files && data.files.length > 0) {
                     currentFiles = data.files;
-                    playedVideos.clear(); // Resetar histórico ao carregar nova pasta
+                    playedVideos.clear();
                     updateFileList(currentFiles);
                     document.getElementById('playlistSelect').value = '';
-                    console.log('Arquivos carregados:', data.files);
+                    console.log('Arquivos carregados:', data.files.length, 'arquivos');
                 } else {
                     alert('Erro: ' + (data.error || 'Nenhum arquivo encontrado'));
                     console.error('Erro na resposta:', data.error);
@@ -197,6 +197,7 @@
         async function loadPlaylists() {
             try {
                 const response = await fetch('/playlists');
+                if (!response.ok) throw new Error(`Erro ao carregar playlists: ${response.statusText}`);
                 const playlists = await response.json();
                 const select = document.getElementById('playlistSelect');
                 select.innerHTML = '<option value="">Selecionar Playlist</option>';
@@ -206,15 +207,17 @@
                     option.textContent = name;
                     select.appendChild(option);
                 }
+                console.log('Playlists carregadas:', Object.keys(playlists).length, 'playlists');
             } catch (error) {
                 console.error('Erro ao carregar playlists:', error);
+                alert('Erro ao carregar playlists: ' + error.message);
             }
         }
 
         async function loadSessions() {
             try {
                 const response = await fetch('/sessions');
-                if (!response.ok) throw new Error('Erro ao carregar sessões');
+                if (!response.ok) throw new Error(`Erro ao carregar sessões: ${response.statusText}`);
                 const sessions = await response.json();
                 const select = document.getElementById('sessionSelect');
                 select.innerHTML = '<option value="">Selecionar Sessão</option>';
@@ -224,24 +227,32 @@
                     option.textContent = name;
                     select.appendChild(option);
                 }
+                console.log('Sessões carregadas:', Object.keys(sessions).length, 'sessões');
             } catch (error) {
                 console.error('Erro ao carregar sessões:', error);
                 alert('Erro ao carregar sessões: ' + error.message);
             }
         }
 
-        function loadSelectedPlaylist() {
+        async function loadSelectedPlaylist() {
             const select = document.getElementById('playlistSelect');
             const name = select.value;
-            if (name) {
-                fetch('/playlists').then(res => res.json()).then(playlists => {
-                    currentFiles = playlists[name] || [];
-                    playedVideos.clear(); // Resetar histórico ao carregar nova playlist
-                    updateFileList(currentFiles);
-                }).catch(error => console.error('Erro ao carregar playlist:', error));
-            } else {
+            if (!name) {
                 currentFiles = [];
                 updateFileList(currentFiles);
+                return;
+            }
+            try {
+                const response = await fetch('/playlists');
+                if (!response.ok) throw new Error(`Erro ao carregar playlists: ${response.statusText}`);
+                const playlists = await response.json();
+                currentFiles = playlists[name] || [];
+                playedVideos.clear();
+                updateFileList(currentFiles);
+                console.log(`Playlist ${name} carregada com ${currentFiles.length} arquivos`);
+            } catch (error) {
+                console.error('Erro ao carregar playlist:', error);
+                alert('Erro ao carregar playlist: ' + error.message);
             }
         }
 
@@ -251,7 +262,7 @@
             if (!name) return;
             try {
                 const response = await fetch('/sessions');
-                if (!response.ok) throw new Error('Erro ao carregar sessões');
+                if (!response.ok) throw new Error(`Erro ao carregar sessões: ${response.statusText}`);
                 const sessions = await response.json();
                 const sessionVideos = sessions[name] || [];
                 videoContainers.forEach((container, index) => {
@@ -262,7 +273,7 @@
                         source.src = `/video/${encodeURIComponent(sessionVideos[index])}`;
                         player.load();
                         player.play().catch(err => {
-                            console.error('Erro ao tocar:', err);
+                            console.error(`Erro ao tocar player ${index + 1}:`, err);
                             errorOverlay.style.display = 'block';
                             setTimeout(() => errorOverlay.style.display = 'none', 5000);
                         });
@@ -271,106 +282,111 @@
                         player.load();
                     }
                 });
+                console.log(`Sessão ${name} carregada com ${sessionVideos.length} vídeos`);
             } catch (error) {
                 console.error('Erro ao carregar sessão:', error);
                 alert('Erro ao carregar sessão: ' + error.message);
             }
         }
 
-        document.getElementById('playlistSelect').addEventListener('change', loadSelectedPlaylist);
-        document.getElementById('sessionSelect').addEventListener('change', loadSelectedSession);
-
         document.getElementById('savePlaylist').addEventListener('click', async () => {
-            const name = prompt('Nome da playlist:');
-            if (name) {
-                const files = Array.from(document.querySelectorAll('#fileList li')).map(li => li.dataset.path);
-                if (files.length === 0) {
-                    alert('Nenhum arquivo para salvar na playlist!');
+            try {
+                const name = prompt('Digite o nome da playlist:');
+                if (!name || name.trim() === '') {
+                    alert('O nome da playlist é obrigatório!');
                     return;
                 }
-                try {
-                    const response = await fetch('/playlists', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, files })
-                    });
-                    const result = await response.json();
-                    if (result.success) {
-                        alert('Playlist salva com sucesso!');
-                        loadPlaylists();
-                    } else {
-                        alert('Erro ao salvar a playlist.');
-                    }
-                } catch (error) {
-                    alert('Erro ao salvar a playlist: ' + error.message);
-                    console.error('Erro ao salvar playlist:', error);
+                const files = Array.from(document.querySelectorAll('#fileList li')).map(li => li.dataset.path);
+                if (files.length === 0) {
+                    alert('Nenhum arquivo selecionado para a playlist!');
+                    return;
                 }
+                console.log(`Salvando playlist: ${name} com ${files.length} arquivos`);
+                const response = await fetch('/playlists', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim(), files })
+                });
+                const result = await response.json();
+                console.log('Resposta do servidor:', result);
+                if (result.success) {
+                    alert('Playlist salva com sucesso!');
+                    await loadPlaylists();
+                } else {
+                    console.error('Erro ao salvar playlist:', result.error);
+                    alert(`Erro ao salvar playlist: ${result.error || 'Erro desconhecido'}`);
+                }
+            } catch (error) {
+                console.error('Erro ao salvar playlist:', error);
+                alert('Erro ao salvar playlist: ' + error.message);
             }
         });
 
         document.getElementById('saveSession').addEventListener('click', async () => {
-            const videos = Array.from(videoContainers).map((container, index) => {
-                const source = document.getElementById(`source${index + 1}`);
-                return source.src ? decodeURIComponent(source.src.split('/video/')[1]) : null;
-            }).filter(v => v);
-            if (videos.length === 0) {
-                alert('Nenhum vídeo selecionado para salvar na sessão!');
-                return;
-            }
-            const playlistName = document.getElementById('playlistSelect').value || 'Sem Playlist';
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const name = `${timestamp}_${playlistName}`;
             try {
+                const videos = Array.from(videoContainers).map((container, index) => {
+                    const source = document.getElementById(`source${index + 1}`);
+                    return source.src ? decodeURIComponent(source.src.split('/video/')[1]) : null;
+                }).filter(v => v);
+                if (videos.length === 0) {
+                    alert('Nenhum vídeo selecionado para salvar na sessão!');
+                    return;
+                }
+                const playlistName = document.getElementById('playlistSelect').value || 'Sem Playlist';
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const name = `${timestamp}_${playlistName}`;
+                console.log(`Salvando sessão: ${name} com ${videos.length} vídeos`);
                 const response = await fetch('/sessions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, videos })
                 });
                 const result = await response.json();
+                console.log('Resposta do servidor:', result);
                 if (result.success) {
                     alert('Sessão salva com sucesso!');
-                    loadSessions();
+                    await loadSessions();
                 } else {
-                    alert('Erro ao salvar a sessão.');
+                    console.error('Erro ao salvar sessão:', result.error);
+                    alert(`Erro ao salvar sessão: ${result.error || 'Erro desconhecido'}`);
                 }
             } catch (error) {
-                alert('Erro ao salvar a sessão: ' + error.message);
                 console.error('Erro ao salvar sessão:', error);
+                alert('Erro ao salvar sessão: ' + error.message);
             }
         });
 
         document.getElementById('removeSession').addEventListener('click', async () => {
-            const select = document.getElementById('sessionSelect');
-            const name = select.value;
-            console.log(`Clicou em Remove Session: ${name}`);
-            if (!name) {
-                console.log('Nenhuma sessão selecionada');
-                alert('Selecione uma sessão para remover!');
-                return;
-            }
-            if (confirm(`Deseja remover a sessão "${name}"?`)) {
-                console.log(`Enviando requisição para remover: ${name}`);
-                try {
-                    const response = await fetch('/remove_session', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name: name })
-                    });
-                    const result = await response.json();
-                    console.log(`Resposta do servidor:`, result);
-                    if (result.success) {
-                        console.log(`Sessão ${name} removida com sucesso`);
-                        alert('Sessão removida com sucesso!');
-                        select.value = '';
-                        loadSessions();
-                    } else {
-                        console.error(`Erro ao remover sessão: ${result.error}`);
-                        alert(`Erro ao remover a sessão: ${result.error || 'Erro desconhecido'}`);
-                    }
-                } catch (error) {
-                    console.error('Erro ao enviar requisição:', error);
-                    alert('Erro ao remover a sessão: ' + error.message);
+            try {
+                const select = document.getElementById('sessionSelect');
+                const name = select.value;
+                if (!name || name.trim() === '') {
+                    alert('Selecione uma sessão para remover!');
+                    return;
                 }
+                if (!confirm(`Deseja remover a sessão "${name}"?`)) {
+                    console.log('Exclusão de sessão cancelada');
+                    return;
+                }
+                console.log(`Removendo sessão: ${name}`);
+                const response = await fetch('/remove_session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const result = await response.json();
+                console.log('Resposta do servidor:', result);
+                if (result.success) {
+                    alert('Sessão removida com sucesso!');
+                    select.value = '';
+                    await loadSessions();
+                } else {
+                    console.error('Erro ao remover sessão:', result.error);
+                    alert(`Erro ao remover sessão: ${result.error || 'Erro desconhecido'}`);
+                }
+            } catch (error) {
+                console.error('Erro ao remover sessão:', error);
+                alert('Erro ao remover sessão: ' + error.message);
             }
         });
 
@@ -382,15 +398,16 @@
                 player.load();
                 player.pause();
             });
+            console.log('Deck limpo');
         });
 
         document.getElementById('panicBtn').addEventListener('click', () => {
             const sites = ['https://www.google.com', 'https://www.youtube.com', 'https://www.wikipedia.org'];
             const randomSite = sites[Math.floor(Math.random() * sites.length)];
             window.open(randomSite, '_blank');
+            console.log('Botão de pânico acionado');
         });
 
-        // Algoritmo Fisher-Yates Shuffle
         function shuffleArray(array) {
             const newArray = [...array];
             for (let i = newArray.length - 1; i > 0; i--) {
@@ -401,17 +418,14 @@
         }
 
         function getUnplayedVideos(count) {
-            // Filtra vídeos não tocados
             let unplayed = currentFiles.filter(file => !playedVideos.has(file));
             if (unplayed.length < count) {
                 console.log('Todos os vídeos foram tocados, resetando histórico');
                 playedVideos.clear();
                 unplayed = [...currentFiles];
             }
-            // Embaralha e pega a quantidade necessária
             const shuffled = shuffleArray(unplayed);
             const selected = shuffled.slice(0, count);
-            // Adiciona ao histórico
             selected.forEach(file => playedVideos.add(file));
             console.log('Vídeos selecionados:', selected.map(f => f.split(/[\\/]/).pop()));
             return selected;
@@ -429,7 +443,7 @@
             const source = document.getElementById(`source${playerIndex + 1}`);
             source.src = `/video/${encodeURIComponent(randomFile)}`;
             player.load();
-            player.play().catch(err => console.error('Erro ao tocar:', err));
+            player.play().catch(err => console.error(`Erro ao tocar player ${playerIndex + 1}:`, err));
             startAutoShuffle(`shuffle${playerIndex + 1}`);
         }
 
@@ -439,13 +453,13 @@
                 return;
             }
             const shuffled = getUnplayedVideos(4);
-            videoContainers.forEach((container, intervalIndex) => {
-                if (shuffled[intervalIndex]) {
+            videoContainers.forEach((container, index) => {
+                if (shuffled[index]) {
                     const player = container.querySelector('.video-player');
-                    const source = document.getElementById(`source${intervalIndex + 1}`);
-                    source.src = `/video/${encodeURIComponent(shuffled[intervalIndex])}`;
+                    const source = document.getElementById(`source${index + 1}`);
+                    source.src = `/video/${encodeURIComponent(shuffled[index])}`;
                     player.load();
-                    player.play().catch(err => console.error('Erro ao tocar:', err));
+                    player.play().catch(err => console.error(`Erro ao tocar player ${index + 1}:`, err));
                 }
             });
             startAutoShuffle('shuffle');
@@ -459,14 +473,14 @@
             const sortedFiles = [...currentFiles].sort((a, b) => a.localeCompare(b));
             const randomIndex = Math.floor(Math.random() * (sortedFiles.length - 3));
             const sequence = sortedFiles.slice(randomIndex, randomIndex + 4);
-            videoContainers.forEach((container, intervalIndex) => {
-                if (sequence[intervalIndex]) {
+            videoContainers.forEach((container, index) => {
+                if (sequence[index]) {
                     const player = container.querySelector('.video-player');
-                    const source = document.getElementById(`source${intervalIndex + 1}`);
-                    source.src = `/video/${encodeURIComponent(sequence[intervalIndex])}`;
+                    const source = document.getElementById(`source${index + 1}`);
+                    source.src = `/video/${encodeURIComponent(sequence[index])}`;
                     player.load();
-                    player.play().catch(err => console.error('Erro ao tocar:', err));
-                    playedVideos.add(sequence[intervalIndex]); // Adiciona ao histórico
+                    player.play().catch(err => console.error(`Erro ao tocar player ${index + 1}:`, err));
+                    playedVideos.add(sequence[index]);
                 }
             });
             startAutoShuffle('sequence');
@@ -568,11 +582,11 @@
                     source.src = videoUrl;
                     player.load();
                     player.onloadeddata = () => player.play().catch(err => {
-                        console.error('Erro ao tocar:', err);
+                        console.error(`Erro ao tocar player ${index + 1}:`, err);
                         errorOverlay.style.display = 'block';
                         setTimeout(() => errorOverlay.style.display = 'none', 5000);
                     });
-                    playedVideos.add(file); // Adiciona ao histórico
+                    playedVideos.add(file);
                 }
             });
             player.parentElement.addEventListener('dragover', (e) => e.preventDefault());
@@ -587,6 +601,9 @@
                 }
             });
         });
+
+        document.getElementById('playlistSelect').addEventListener('change', loadSelectedPlaylist);
+        document.getElementById('sessionSelect').addEventListener('change', loadSelectedSession);
 
         loadPlaylists();
         loadSessions();
