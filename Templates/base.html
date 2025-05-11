@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>EndoFlick - Video Player</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body { overflow: hidden; }
         .divider { width: 10px; background: #555; cursor: pointer; }
@@ -25,7 +26,10 @@
     <header class="p-2 bg-secondary d-flex justify-content-between">
         <h1 class="h5 m-0">EndoFlick - Video Player</h1>
         <div>
-            <input type="checkbox" id="themeToggle" class="me-2">
+            <label for="themeToggle" class="me-2">
+                <input type="checkbox" id="themeToggle" class="me-1">
+                <i class="bi bi-lightbulb"></i>
+            </label>
             <a href="#" class="text-light me-2">Sobre</a>
             <a href="#" class="text-light">Ajuda</a>
         </div>
@@ -70,7 +74,10 @@
                 <select id="sessionSelect" class="form-select compact-control" onchange="loadSelectedSession()">
                     <option value="">Selecionar Sessão</option>
                 </select>
-                <button id="saveSession" class="btn btn-primary compact-btn compact-control">Save Session</button>
+                <div class="btn-row">
+                    <button id="saveSession" class="btn btn-primary compact-btn">Save Session</button>
+                    <button id="removeSession" class="btn btn-danger compact-btn">Remove Session</button>
+                </div>
                 <input type="text" id="filterInput" class="form-control compact-control" placeholder="Filtrar por nome">
                 <select id="sortSelect" class="form-select compact-control">
                     <option value="name">A-Z</option>
@@ -111,6 +118,7 @@
         const videoContainers = document.querySelectorAll('.video-container');
         let isPlaylistVisible = true;
         let currentFiles = [];
+        let playedVideos = new Set(); // Histórico de vídeos tocados
         let autoShuffleIntervalId = null;
 
         function updatePlayerSizes() {
@@ -170,6 +178,7 @@
                 const data = await response.json();
                 if (data.files && data.files.length > 0) {
                     currentFiles = data.files;
+                    playedVideos.clear(); // Resetar histórico ao carregar nova pasta
                     updateFileList(currentFiles);
                     document.getElementById('playlistSelect').value = '';
                     console.log('Arquivos carregados:', data.files);
@@ -205,6 +214,7 @@
         async function loadSessions() {
             try {
                 const response = await fetch('/sessions');
+                if (!response.ok) throw new Error('Erro ao carregar sessões');
                 const sessions = await response.json();
                 const select = document.getElementById('sessionSelect');
                 select.innerHTML = '<option value="">Selecionar Sessão</option>';
@@ -216,6 +226,7 @@
                 }
             } catch (error) {
                 console.error('Erro ao carregar sessões:', error);
+                alert('Erro ao carregar sessões: ' + error.message);
             }
         }
 
@@ -225,6 +236,7 @@
             if (name) {
                 fetch('/playlists').then(res => res.json()).then(playlists => {
                     currentFiles = playlists[name] || [];
+                    playedVideos.clear(); // Resetar histórico ao carregar nova playlist
                     updateFileList(currentFiles);
                 }).catch(error => console.error('Erro ao carregar playlist:', error));
             } else {
@@ -233,22 +245,35 @@
             }
         }
 
-        function loadSelectedSession() {
+        async function loadSelectedSession() {
             const select = document.getElementById('sessionSelect');
             const name = select.value;
-            if (name) {
-                fetch('/sessions').then(res => res.json()).then(sessions => {
-                    const sessionVideos = sessions[name] || [];
-                    videoContainers.forEach((container, index) => {
-                        if (sessionVideos[index]) {
-                            const player = container.querySelector('.video-player');
-                            const source = document.getElementById(`source${index + 1}`);
-                            source.src = `/video/${encodeURIComponent(sessionVideos[index])}`;
-                            player.load();
-                            player.play().catch(err => console.error('Erro ao tocar:', err));
-                        }
-                    });
-                }).catch(error => console.error('Erro ao carregar sessão:', error));
+            if (!name) return;
+            try {
+                const response = await fetch('/sessions');
+                if (!response.ok) throw new Error('Erro ao carregar sessões');
+                const sessions = await response.json();
+                const sessionVideos = sessions[name] || [];
+                videoContainers.forEach((container, index) => {
+                    const player = container.querySelector('.video-player');
+                    const source = document.getElementById(`source${index + 1}`);
+                    const errorOverlay = document.getElementById(`error${index + 1}`);
+                    if (sessionVideos[index] && typeof sessionVideos[index] === 'string') {
+                        source.src = `/video/${encodeURIComponent(sessionVideos[index])}`;
+                        player.load();
+                        player.play().catch(err => {
+                            console.error('Erro ao tocar:', err);
+                            errorOverlay.style.display = 'block';
+                            setTimeout(() => errorOverlay.style.display = 'none', 5000);
+                        });
+                    } else {
+                        source.src = '';
+                        player.load();
+                    }
+                });
+            } catch (error) {
+                console.error('Erro ao carregar sessão:', error);
+                alert('Erro ao carregar sessão: ' + error.message);
             }
         }
 
@@ -314,6 +339,41 @@
             }
         });
 
+        document.getElementById('removeSession').addEventListener('click', async () => {
+            const select = document.getElementById('sessionSelect');
+            const name = select.value;
+            console.log(`Clicou em Remove Session: ${name}`);
+            if (!name) {
+                console.log('Nenhuma sessão selecionada');
+                alert('Selecione uma sessão para remover!');
+                return;
+            }
+            if (confirm(`Deseja remover a sessão "${name}"?`)) {
+                console.log(`Enviando requisição para remover: ${name}`);
+                try {
+                    const response = await fetch('/remove_session', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: name })
+                    });
+                    const result = await response.json();
+                    console.log(`Resposta do servidor:`, result);
+                    if (result.success) {
+                        console.log(`Sessão ${name} removida com sucesso`);
+                        alert('Sessão removida com sucesso!');
+                        select.value = '';
+                        loadSessions();
+                    } else {
+                        console.error(`Erro ao remover sessão: ${result.error}`);
+                        alert(`Erro ao remover a sessão: ${result.error || 'Erro desconhecido'}`);
+                    }
+                } catch (error) {
+                    console.error('Erro ao enviar requisição:', error);
+                    alert('Erro ao remover a sessão: ' + error.message);
+                }
+            }
+        });
+
         document.getElementById('clearDeck').addEventListener('click', () => {
             videoContainers.forEach((container, index) => {
                 const player = container.querySelector('.video-player');
@@ -330,12 +390,40 @@
             window.open(randomSite, '_blank');
         });
 
+        // Algoritmo Fisher-Yates Shuffle
+        function shuffleArray(array) {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        }
+
+        function getUnplayedVideos(count) {
+            // Filtra vídeos não tocados
+            let unplayed = currentFiles.filter(file => !playedVideos.has(file));
+            if (unplayed.length < count) {
+                console.log('Todos os vídeos foram tocados, resetando histórico');
+                playedVideos.clear();
+                unplayed = [...currentFiles];
+            }
+            // Embaralha e pega a quantidade necessária
+            const shuffled = shuffleArray(unplayed);
+            const selected = shuffled.slice(0, count);
+            // Adiciona ao histórico
+            selected.forEach(file => playedVideos.add(file));
+            console.log('Vídeos selecionados:', selected.map(f => f.split(/[\\/]/).pop()));
+            return selected;
+        }
+
         function shufflePlayer(playerIndex) {
             if (currentFiles.length === 0) {
                 alert('Nenhum arquivo disponível!');
                 return;
             }
-            const randomFile = currentFiles[Math.floor(Math.random() * currentFiles.length)];
+            const selectedVideos = getUnplayedVideos(1);
+            const randomFile = selectedVideos[0];
             const container = videoContainers[playerIndex];
             const player = container.querySelector('.video-player');
             const source = document.getElementById(`source${playerIndex + 1}`);
@@ -350,7 +438,7 @@
                 alert('Nenhum arquivo disponível!');
                 return;
             }
-            const shuffled = currentFiles.sort(() => 0.5 - Math.random()).slice(0, 4);
+            const shuffled = getUnplayedVideos(4);
             videoContainers.forEach((container, intervalIndex) => {
                 if (shuffled[intervalIndex]) {
                     const player = container.querySelector('.video-player');
@@ -378,6 +466,7 @@
                     source.src = `/video/${encodeURIComponent(sequence[intervalIndex])}`;
                     player.load();
                     player.play().catch(err => console.error('Erro ao tocar:', err));
+                    playedVideos.add(sequence[intervalIndex]); // Adiciona ao histórico
                 }
             });
             startAutoShuffle('sequence');
@@ -483,6 +572,7 @@
                         errorOverlay.style.display = 'block';
                         setTimeout(() => errorOverlay.style.display = 'none', 5000);
                     });
+                    playedVideos.add(file); // Adiciona ao histórico
                 }
             });
             player.parentElement.addEventListener('dragover', (e) => e.preventDefault());
@@ -502,5 +592,5 @@
         loadSessions();
         updatePlayerSizes();
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'93df3c807cf1ed8b',t:'MTc0Njk0MDkyMy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>

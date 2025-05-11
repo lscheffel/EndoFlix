@@ -132,6 +132,31 @@ def sessions():
         success = save_sessions(sessions)
         return jsonify({'success': success})
 
+@app.route('/remove_session', methods=['POST'])
+def remove_session():
+    data = request.get_json()
+    name = data.get('name')
+    app.logger.debug(f"Recebida requisição para remover sessão: {name}")
+    if not name:
+        app.logger.error("Nome da sessão não fornecido")
+        return jsonify({'success': False, 'error': 'Nome da sessão não fornecido'}), 400
+    
+    sessions = load_sessions()
+    if name in sessions:
+        try:
+            del sessions[name]
+            if save_sessions(sessions):
+                app.logger.info(f"Sessão {name} removida com sucesso")
+                return jsonify({'success': True}), 200
+            else:
+                app.logger.error("Falha ao salvar sessões após remoção")
+                return jsonify({'success': False, 'error': 'Falha ao salvar sessões'}), 500
+        except Exception as e:
+            app.logger.error(f"Erro ao remover sessão {name}: {str(e)}")
+            return jsonify({'success': False, 'error': f'Erro ao remover sessão: {str(e)}'}), 500
+    app.logger.warning(f"Sessão {name} não encontrada")
+    return jsonify({'success': False, 'error': 'Sessão não encontrada'}), 404
+
 @app.route('/video/<path:filename>')
 def serve_video(filename):
     input_path = Path(filename).as_posix()
