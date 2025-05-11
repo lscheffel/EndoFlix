@@ -34,7 +34,8 @@ def get_media_files(folder):
         return media
     for file in folder_path.rglob('*'):
         if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']:
-            media.append(str(file))
+            # Simula duração (em segundos) para ordenação; substituir por ffprobe se disponível
+            media.append({"path": str(file), "duration": os.path.getsize(file) % 1000})
             app.logger.debug(f"Arquivo encontrado: {file}")
     return media
 
@@ -58,6 +59,22 @@ def serve_video_range(input_path):
     with open(input_path, 'rb') as f:
         f.seek(start)
         data = f.read(content_length)
+
+    # Incrementar contador de visualizações
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE endoflix_playlist SET play_count = play_count + 1 WHERE %s = ANY(files)",
+            (input_path,)
+        )
+        conn.commit()
+    except Exception as e:
+        app.logger.error(f"Erro ao atualizar play_count: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
 
     return Response(
         data,
@@ -94,7 +111,7 @@ def scan():
             return jsonify({'files': files})
         else:
             app.logger.warning(f"Nenhum arquivo de vídeo encontrado na pasta {folder}")
-            return jsonify({'error': 'Nenhum arquivo de vídeo encontrado na pasta'}), 404
+            return jsonify({'error': 'Nenhum arquivo de vídeo encontrado'}), 404
     app.logger.error(f"Pasta inválida ou não encontrada: {folder}")
     return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
 
@@ -104,8 +121,8 @@ def playlists():
     cur = conn.cursor()
     try:
         if request.method == 'GET':
-            cur.execute("SELECT name, files FROM endoflix_playlist")
-            playlists = {row[0]: row[1] for row in cur.fetchall()}
+            cur.execute("SELECT name, files, play_count FROM endoflix_playlist")
+            playlists = {row[0]: {"files": row[1], "play_count": row[2]} for row in cur.fetchall()}
             app.logger.debug(f"Playlists carregadas: {len(playlists)} - Dados: {playlists}")
             return jsonify(playlists)
         elif request.method == 'POST':
@@ -127,7 +144,7 @@ def playlists():
             
             # Salvar no banco
             cur.execute(
-                "INSERT INTO endoflix_playlist (name, files) VALUES (%s, %s) ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files RETURNING id",
+                "INSERT INTO endoflix_playlist (name, files, play_count) VALUES (%s, %s, 0) ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files, play_count = endoflix_playlist.play_count RETURNING id",
                 (name.strip(), files)
             )
             conn.commit()
@@ -239,6 +256,71 @@ def remove_session():
         conn.rollback()
         app.logger.error(f"Erro ao remover sessão: {str(e)}")
         return jsonify({'success': False, 'error': f"Erro ao remover sessão: {str(e)}"}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/favorites', methods=['GET', 'POST', 'DELETE'])
+def favorites():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        if request.method == 'GET':
+            cur.execute("SELECT file_path FROM endoflix_favorites")
+            favorites = [row[0] for row in cur.fetchall()]
+            app.logger.debug(f"Favoritos carregados: {len(favorites)}")
+            return jsonify(favorites)
+        elif request.method == 'POST':
+            data = request.get_json()
+            file_path = data.get('file_path')
+            if not file_path or not isinstance(file_path, str):
+                app.logger.error("Caminho do arquivo inválido")
+                return jsonify({'success': False, 'error': 'Caminho do arquivo é obrigatório'}), 400
+            cur.execute(
+                "INSERT INTO endoflix_favorites (file_path) VALUES (%s) ON CONFLICT DO NOTHING",
+                (file_path,)
+            )
+            conn.commit()
+            app.logger.info(f"Favorito adicionado: {file_path}")
+            return jsonify({'success': True})
+        elif request.method == 'DELETE':
+            data = request.get_json()
+            file_path = data.get('file_path')
+            if not file_path or not isinstance(file_path, str):
+                app.logger.error("Caminho do arquivo inválido")
+                return jsonify({'success': False, 'error': 'Caminho do arquivo é obrigatório'}), 400
+            cur.execute("DELETE FROM endoflix_favorites WHERE file_path = %s", (file_path,))
+            conn.commit()
+            app.logger.info(f"Favorito removido: {file_path}")
+            return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        app.logger.error(f"Erro ao gerenciar favoritos: {str(e)}")
+        return jsonify({'success': False, 'error': f"Erro ao gerenciar favoritos: {str(e)}"}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/stats', methods=['GET'])
+def stats():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT COUNT(DISTINCT files) FROM endoflix_playlist")
+        video_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM endoflix_playlist")
+        playlist_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM endoflix_session")
+        session_count = cur.fetchone()[0]
+        app.logger.debug(f"Estatísticas: {video_count} vídeos, {playlist_count} playlists, {session_count} sessões")
+        return jsonify({
+            'videos': video_count,
+            'playlists': playlist_count,
+            'sessions': session_count
+        })
+    except Exception as e:
+        app.logger.error(f"Erro ao obter estatísticas: {str(e)}")
+        return jsonify({'error': f"Erro ao obter estatísticas: {str(e)}"}), 500
     finally:
         cur.close()
         conn.close()
