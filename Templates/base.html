@@ -11,13 +11,14 @@
         .playlist-frame { transition: width 0.3s; max-width: 20%; min-width: 20%; overflow-x: hidden; }
         .players-frame { transition: width 0.3s; }
         .video-container { position: relative; }
-        .video-player { object-fit: contain; }
+        .video-player { object-fit: contain; width: 100%; height: 100%; }
         .error-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); color: red; text-align: center; padding-top: 50px; display: none; }
         .compact-control { margin-bottom: 5px !important; padding: 2px !important; font-size: 0.9em; }
         .compact-btn { padding: 2px 5px !important; font-size: 0.9em; }
         .btn-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
         .btn-row button { flex: 1; margin: 0 2px; }
         .panic-btn { background-color: purple; padding: 5px !important; font-size: 1.2em; width: 100%; margin: 5px 0; }
+        .shuffle-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 5px; }
     </style>
 </head>
 <body class="bg-dark text-light">
@@ -31,26 +32,26 @@
     </header>
     <div class="d-flex" style="height: calc(100vh - 50px);">
         <div class="players-frame" id="playersFrame" style="width: 80%;">
-            <div class="row h-100 m-0">
-                <div class="col-6 p-1 video-container">
+            <div class="row h-100 m-0" style="display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;">
+                <div class="p-1 video-container">
                     <video class="video-player" id="player1" controls preload="auto" loop>
                         <source id="source1" type="video/mp4">
                         <div class="error-overlay" id="error1">Erro ao carregar o vídeo.</div>
                     </video>
                 </div>
-                <div class="col-6 p-1 video-container">
+                <div class="p-1 video-container">
                     <video class="video-player" id="player2" controls preload="auto" loop>
                         <source id="source2" type="video/mp4">
                         <div class="error-overlay" id="error2">Erro ao carregar o vídeo.</div>
                     </video>
                 </div>
-                <div class="col-6 p-1 video-container">
+                <div class="p-1 video-container">
                     <video class="video-player" id="player3" controls preload="auto" loop>
                         <source id="source3" type="video/mp4">
                         <div class="error-overlay" id="error3">Erro ao carregar o vídeo.</div>
                     </video>
                 </div>
-                <div class="col-6 p-1 video-container">
+                <div class="p-1 video-container">
                     <video class="video-player" id="player4" controls preload="auto" loop>
                         <source id="source4" type="video/mp4">
                         <div class="error-overlay" id="error4">Erro ao carregar o vídeo.</div>
@@ -66,6 +67,10 @@
                 <select id="playlistSelect" class="form-select compact-control" onchange="loadSelectedPlaylist()">
                     <option value="">Selecionar Playlist</option>
                 </select>
+                <select id="sessionSelect" class="form-select compact-control" onchange="loadSelectedSession()">
+                    <option value="">Selecionar Sessão</option>
+                </select>
+                <button id="saveSession" class="btn btn-primary compact-btn compact-control">Save Session</button>
                 <input type="text" id="filterInput" class="form-control compact-control" placeholder="Filtrar por nome">
                 <select id="sortSelect" class="form-select compact-control">
                     <option value="name">A-Z</option>
@@ -85,6 +90,12 @@
                         <input type="checkbox" id="autoShuffleCheckbox" class="me-2"> Auto Shuffle
                     </label>
                     <input type="number" id="autoShuffleInterval" class="form-control compact-control" min="1" value="3" style="width: 60px;">
+                </div>
+                <div class="shuffle-btn-grid">
+                    <button id="shuffle1" class="btn btn-success compact-btn">Shuffle 1</button>
+                    <button id="shuffle2" class="btn btn-success compact-btn">Shuffle 2</button>
+                    <button id="shuffle3" class="btn btn-success compact-btn">Shuffle 3</button>
+                    <button id="shuffle4" class="btn btn-success compact-btn">Shuffle 4</button>
                 </div>
                 <div class="text-center">
                     <button id="panicBtn" class="btn panic-btn">Pânico</button>
@@ -106,18 +117,13 @@
             const frameWidth = playersFrame.offsetWidth;
             const frameHeight = playersFrame.offsetHeight;
             const playerWidth = frameWidth / 2;
-            const playerHeight = Math.min(playerWidth * 9 / 16, frameHeight / 2);
+            const playerHeight = frameHeight / 2;
 
             videoContainers.forEach(container => {
                 container.style.width = `${playerWidth}px`;
                 container.style.height = `${playerHeight}px`;
                 container.querySelector('.video-player').style.width = `${playerWidth}px`;
                 container.querySelector('.video-player').style.height = `${playerHeight}px`;
-            });
-
-            videoContainers.forEach(container => {
-                container.classList.remove('col-12');
-                container.classList.add('col-6');
             });
         }
 
@@ -196,6 +202,23 @@
             }
         }
 
+        async function loadSessions() {
+            try {
+                const response = await fetch('/sessions');
+                const sessions = await response.json();
+                const select = document.getElementById('sessionSelect');
+                select.innerHTML = '<option value="">Selecionar Sessão</option>';
+                for (const name in sessions) {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    select.appendChild(option);
+                }
+            } catch (error) {
+                console.error('Erro ao carregar sessões:', error);
+            }
+        }
+
         function loadSelectedPlaylist() {
             const select = document.getElementById('playlistSelect');
             const name = select.value;
@@ -210,7 +233,27 @@
             }
         }
 
+        function loadSelectedSession() {
+            const select = document.getElementById('sessionSelect');
+            const name = select.value;
+            if (name) {
+                fetch('/sessions').then(res => res.json()).then(sessions => {
+                    const sessionVideos = sessions[name] || [];
+                    videoContainers.forEach((container, index) => {
+                        if (sessionVideos[index]) {
+                            const player = container.querySelector('.video-player');
+                            const source = document.getElementById(`source${index + 1}`);
+                            source.src = `/video/${encodeURIComponent(sessionVideos[index])}`;
+                            player.load();
+                            player.play().catch(err => console.error('Erro ao tocar:', err));
+                        }
+                    });
+                }).catch(error => console.error('Erro ao carregar sessão:', error));
+            }
+        }
+
         document.getElementById('playlistSelect').addEventListener('change', loadSelectedPlaylist);
+        document.getElementById('sessionSelect').addEventListener('change', loadSelectedSession);
 
         document.getElementById('savePlaylist').addEventListener('click', async () => {
             const name = prompt('Nome da playlist:');
@@ -240,6 +283,37 @@
             }
         });
 
+        document.getElementById('saveSession').addEventListener('click', async () => {
+            const videos = Array.from(videoContainers).map((container, index) => {
+                const source = document.getElementById(`source${index + 1}`);
+                return source.src ? decodeURIComponent(source.src.split('/video/')[1]) : null;
+            }).filter(v => v);
+            if (videos.length === 0) {
+                alert('Nenhum vídeo selecionado para salvar na sessão!');
+                return;
+            }
+            const playlistName = document.getElementById('playlistSelect').value || 'Sem Playlist';
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const name = `${timestamp}_${playlistName}`;
+            try {
+                const response = await fetch('/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, videos })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('Sessão salva com sucesso!');
+                    loadSessions();
+                } else {
+                    alert('Erro ao salvar a sessão.');
+                }
+            } catch (error) {
+                alert('Erro ao salvar a sessão: ' + error.message);
+                console.error('Erro ao salvar sessão:', error);
+            }
+        });
+
         document.getElementById('clearDeck').addEventListener('click', () => {
             videoContainers.forEach((container, index) => {
                 const player = container.querySelector('.video-player');
@@ -255,6 +329,21 @@
             const randomSite = sites[Math.floor(Math.random() * sites.length)];
             window.open(randomSite, '_blank');
         });
+
+        function shufflePlayer(playerIndex) {
+            if (currentFiles.length === 0) {
+                alert('Nenhum arquivo disponível!');
+                return;
+            }
+            const randomFile = currentFiles[Math.floor(Math.random() * currentFiles.length)];
+            const container = videoContainers[playerIndex];
+            const player = container.querySelector('.video-player');
+            const source = document.getElementById(`source${playerIndex + 1}`);
+            source.src = `/video/${encodeURIComponent(randomFile)}`;
+            player.load();
+            player.play().catch(err => console.error('Erro ao tocar:', err));
+            startAutoShuffle(`shuffle${playerIndex + 1}`);
+        }
 
         document.getElementById('wishMeLuck').addEventListener('click', () => {
             if (currentFiles.length === 0) {
@@ -294,6 +383,11 @@
             startAutoShuffle('sequence');
         });
 
+        document.getElementById('shuffle1').addEventListener('click', () => shufflePlayer(0));
+        document.getElementById('shuffle2').addEventListener('click', () => shufflePlayer(1));
+        document.getElementById('shuffle3').addEventListener('click', () => shufflePlayer(2));
+        document.getElementById('shuffle4').addEventListener('click', () => shufflePlayer(3));
+
         function startAutoShuffle(mode) {
             const autoShuffleCheckbox = document.getElementById('autoShuffleCheckbox');
             const intervalInput = document.getElementById('autoShuffleInterval');
@@ -305,6 +399,9 @@
                         document.getElementById('wishMeLuck').click();
                     } else if (mode === 'sequence') {
                         document.getElementById('randomSequence').click();
+                    } else if (mode.startsWith('shuffle')) {
+                        const playerIndex = parseInt(mode.replace('shuffle', '')) - 1;
+                        shufflePlayer(playerIndex);
                     }
                 }, interval);
             }
@@ -320,7 +417,9 @@
         document.getElementById('autoShuffleInterval').addEventListener('input', () => {
             if (autoShuffleIntervalId) {
                 clearInterval(autoShuffleIntervalId);
-                const mode = document.activeElement.id === 'wishMeLuck' ? 'shuffle' : 'sequence';
+                const mode = document.activeElement.id === 'wishMeLuck' ? 'shuffle' : 
+                             document.activeElement.id === 'randomSequence' ? 'sequence' : 
+                             document.activeElement.id.startsWith('shuffle') ? document.activeElement.id : 'shuffle';
                 startAutoShuffle(mode);
             }
         });
@@ -400,7 +499,8 @@
         });
 
         loadPlaylists();
+        loadSessions();
         updatePlayerSizes();
     </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'93df3c807cf1ed8b',t:'MTc0Njk0MDkyMy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

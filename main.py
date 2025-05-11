@@ -6,6 +6,7 @@ import logging
 
 app = Flask(__name__)
 PLAYLISTS_FILE = "playlists.json"
+SESSIONS_FILE = "sessions.json"
 TRANSCODE_DIR = Path("transcode")
 
 # Configurar logging
@@ -38,6 +39,24 @@ def save_playlists(playlists):
         app.logger.debug(f"Playlists salvas em {PLAYLISTS_FILE}")
     except Exception as e:
         app.logger.error(f"Erro ao salvar playlists: {e}")
+
+def load_sessions():
+    try:
+        with open(SESSIONS_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        app.logger.warning(f"Arquivo {SESSIONS_FILE} não encontrado, criando novo.")
+        return {}
+
+def save_sessions(sessions):
+    try:
+        with open(SESSIONS_FILE, 'w') as f:
+            json.dump(sessions, f, indent=4)
+        app.logger.debug(f"Sessões salvas em {SESSIONS_FILE}")
+        return True
+    except Exception as e:
+        app.logger.error(f"Erro ao salvar sessões: {e}")
+        return False
 
 def serve_video_range(input_path):
     range_header = request.headers.get('Range', None)
@@ -101,6 +120,17 @@ def playlists():
         playlists[data['name']] = data['files']
         save_playlists(playlists)
         return jsonify({'success': True})
+
+@app.route('/sessions', methods=['GET', 'POST'])
+def sessions():
+    if request.method == 'GET':
+        return jsonify(load_sessions())
+    elif request.method == 'POST':
+        data = request.get_json()
+        sessions = load_sessions()
+        sessions[data['name']] = data['videos']
+        success = save_sessions(sessions)
+        return jsonify({'success': success})
 
 @app.route('/video/<path:filename>')
 def serve_video(filename):
