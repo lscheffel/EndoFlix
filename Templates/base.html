@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>EndoFlick - Video Player</title>
+    <title>EndoFlix - Video Player</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
     <style>
@@ -20,15 +20,17 @@
         .btn-row button { flex: 1; margin: 0 2px; }
         .panic-btn { background-color: purple; padding: 5px !important; font-size: 1.2em; width: 100%; margin: 5px 0; }
         .shuffle-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 5px; }
+        .favorite-overlay { position: absolute; top: 10px; left: 10px; z-index: 10; cursor: pointer; }
+        .share-overlay { position: absolute; top: 40px; left: 10px; z-index: 10; cursor: pointer; }
+        .speed-overlay { position: absolute; bottom: 10px; right: 10px; z-index: 10; }
+        .speed-overlay select { font-size: 0.9em; padding: 2px; }
         .favorite-btn { cursor: pointer; margin-right: 5px; }
         .played-indicator { margin-left: 5px; }
-        .spinner-overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; display: none; }
-        #notification { font-size: calc(1rem - 1pt); }
     </style>
 </head>
 <body class="bg-dark text-light">
-    <header class="p-2 bg-secondary d-flex justify-content-between align-items-center">
-        <h1 class="h5 m-0">EndoFlick - Video Player <span id="stats"></span><span id="notification" class="ms-2"></span></h1>
+    <header class="p-2 bg-secondary d-flex justify-content-between">
+        <h1 class="h5 m-0">EndoFlix - Video Player</h1>
         <div>
             <label for="themeToggle" class="me-2">
                 <input type="checkbox" id="themeToggle" class="me-1">
@@ -47,24 +49,56 @@
                         <source id="source1" type="video/mp4">
                         <div class="error-overlay" id="error1">Erro ao carregar o vídeo.</div>
                     </video>
+                    <i class="favorite-overlay bi bi-star" id="favorite1"></i>
+                    <i class="share-overlay bi bi-share" id="share1"></i>
+                    <select class="speed-overlay" id="speed1">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                    </select>
                 </div>
                 <div class="p-1 video-container">
                     <video class="video-player" id="player2" controls preload="auto" loop>
                         <source id="source2" type="video/mp4">
                         <div class="error-overlay" id="error2">Erro ao carregar o vídeo.</div>
                     </video>
+                    <i class="favorite-overlay bi bi-star" id="favorite2"></i>
+                    <i class="share-overlay bi bi-share" id="share2"></i>
+                    <select class="speed-overlay" id="speed2">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                    </select>
                 </div>
                 <div class="p-1 video-container">
                     <video class="video-player" id="player3" controls preload="auto" loop>
                         <source id="source3" type="video/mp4">
                         <div class="error-overlay" id="error3">Erro ao carregar o vídeo.</div>
                     </video>
+                    <i class="favorite-overlay bi bi-star" id="favorite3"></i>
+                    <i class="share-overlay bi bi-share" id="share3"></i>
+                    <select class="speed-overlay" id="speed3">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                    </select>
                 </div>
                 <div class="p-1 video-container">
                     <video class="video-player" id="player4" controls preload="auto" loop>
                         <source id="source4" type="video/mp4">
                         <div class="error-overlay" id="error4">Erro ao carregar o vídeo.</div>
                     </video>
+                    <i class="favorite-overlay bi bi-star" id="favorite4"></i>
+                    <i class="share-overlay bi bi-share" id="share4"></i>
+                    <select class="speed-overlay" id="speed4">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                    </select>
                 </div>
             </div>
         </div>
@@ -92,7 +126,6 @@
                 <select id="sortSelect" class="form-select compact-control">
                     <option value="name">A-Z</option>
                     <option value="date">Data</option>
-                    <option value="duration">Duração</option>
                 </select>
                 <ul id="fileList" class="list-group compact-control" style="max-height: 50vh; overflow-y: auto;"></ul>
                 <div class="btn-row">
@@ -115,15 +148,9 @@
                     <button id="shuffle4" class="btn btn-success compact-btn">Shuffle 4</button>
                 </div>
                 <div class="text-center">
-                    <input type="text" id="panicUrls" class="form-control compact-control mb-2" placeholder="URLs de pânico (ex.: google.com,youtube.com)">
                     <button id="panicBtn" class="btn panic-btn">Pânico</button>
                 </div>
             </div>
-        </div>
-    </div>
-    <div class="spinner-overlay" id="spinner">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Carregando...</span>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -138,17 +165,19 @@
         let autoShuffleIntervalId = null;
         let favorites = [];
 
-        function showNotification(message, isError = false) {
-            const notificationEl = document.getElementById('notification');
+        function alert(message) {
+            const notificationEl = document.createElement('div');
             notificationEl.textContent = message;
-            notificationEl.style.color = isError ? 'red' : 'limegreen';
-            setTimeout(() => {
-                notificationEl.textContent = '';
-            }, 3000);
-        }
-
-        function toggleSpinner(show) {
-            document.getElementById('spinner').style.display = show ? 'block' : 'none';
+            notificationEl.style.position = 'fixed';
+            notificationEl.style.top = '10px';
+            notificationEl.style.right = '10px';
+            notificationEl.style.background = 'rgba(0,0,0,0.8)';
+            notificationEl.style.color = 'white';
+            notificationEl.style.padding = '10px';
+            notificationEl.style.borderRadius = '5px';
+            notificationEl.style.zIndex = '1000';
+            document.body.appendChild(notificationEl);
+            setTimeout(() => notificationEl.remove(), 3000);
         }
 
         function updatePlayerSizes() {
@@ -192,24 +221,12 @@
             document.body.classList.toggle('text-light', !e.target.checked);
         });
 
-        async function fetchStats() {
-            try {
-                const response = await fetch('/stats');
-                if (!response.ok) throw new Error('Erro ao carregar estatísticas');
-                const stats = await response.json();
-                document.getElementById('stats').textContent = `(${stats.videos} vídeos, ${stats.playlists} playlists, ${stats.sessions} sessões)`;
-            } catch (error) {
-                console.error('Erro ao carregar estatísticas:', error);
-            }
-        }
-
         async function scanFolder() {
             const folder = document.getElementById('folderInput').value.trim();
             if (!folder) {
-                showNotification('Digite o caminho da pasta!', true);
+                alert('Digite o caminho da pasta!');
                 return;
             }
-            toggleSpinner(true);
             try {
                 const response = await fetch('/scan', {
                     method: 'POST',
@@ -223,24 +240,20 @@
                     playedVideos.clear();
                     updateFileList(currentFiles);
                     document.getElementById('playlistSelect').value = '';
-                    showNotification(`Arquivos carregados: ${data.files.length}`, false);
                     console.log('Arquivos carregados:', data.files.length, 'arquivos');
                 } else {
-                    showNotification(data.error || 'Nenhum arquivo encontrado', true);
+                    alert('Erro: ' + (data.error || 'Nenhum arquivo encontrado'));
                     console.error('Erro na resposta:', data.error);
-                    updateDRAMATICFileList([]);
+                    updateFileList([]);
                 }
             } catch (error) {
-                showNotification('Erro ao escanear a pasta: ' + error.message, true);
+                alert('Erro ao escanear a pasta: ' + error.message);
                 console.error('Erro ao escanear:', error);
                 updateFileList([]);
-            } finally {
-                toggleSpinner(false);
             }
         }
 
         async function loadPlaylists() {
-            toggleSpinner(true);
             try {
                 const response = await fetch('/playlists');
                 if (!response.ok) throw new Error(`Erro ao carregar playlists: ${response.statusText}`);
@@ -253,18 +266,14 @@
                     option.textContent = name;
                     select.appendChild(option);
                 }
-                showNotification(`Playlists carregadas: ${Object.keys(playlists).length}`, false);
                 console.log('Playlists carregadas:', Object.keys(playlists).length, 'playlists');
             } catch (error) {
-                showNotification('Erro ao carregar playlists: ' + error.message, true);
                 console.error('Erro ao carregar playlists:', error);
-            } finally {
-                toggleSpinner(false);
+                alert('Erro ao carregar playlists: ' + error.message);
             }
         }
 
         async function loadSessions() {
-            toggleSpinner(true);
             try {
                 const response = await fetch('/sessions');
                 if (!response.ok) throw new Error(`Erro ao carregar sessões: ${response.statusText}`);
@@ -277,13 +286,10 @@
                     option.textContent = name;
                     select.appendChild(option);
                 }
-                showNotification(`Sessões carregadas: ${Object.keys(sessions).length}`, false);
                 console.log('Sessões carregadas:', Object.keys(sessions).length, 'sessões');
             } catch (error) {
-                showNotification('Erro ao carregar sessões: ' + error.message, true);
                 console.error('Erro ao carregar sessões:', error);
-            } finally {
-                toggleSpinner(false);
+                alert('Erro ao carregar sessões: ' + error.message);
             }
         }
 
@@ -293,9 +299,10 @@
                 if (!response.ok) throw new Error('Erro ao carregar favoritos');
                 favorites = await response.json();
                 updateFileList(currentFiles);
+                updateFavoriteIcons();
             } catch (error) {
                 console.error('Erro ao carregar favoritos:', error);
-                showNotification('Erro ao carregar favoritos: ' + error.message, true);
+                alert('Erro ao carregar favoritos: ' + error.message);
             }
         }
 
@@ -311,19 +318,33 @@
                 if (result.success) {
                     if (isFavorite) {
                         favorites = favorites.filter(f => f !== file);
-                        showNotification('Removido dos favoritos', false);
+                        alert('Removido dos favoritos');
                     } else {
                         favorites.push(file);
-                        showNotification('Adicionado aos favoritos', false);
+                        alert('Adicionado aos favoritos');
                     }
                     updateFileList(currentFiles);
+                    updateFavoriteIcons();
                 } else {
-                    showNotification(`Erro ao gerenciar favorito: ${result.error}`, true);
+                    alert(`Erro ao gerenciar favorito: ${result.error}`);
                 }
             } catch (error) {
-                showNotification('Erro ao gerenciar favorito: ' + error.message, true);
+                alert('Erro ao gerenciar favorito: ' + error.message);
                 console.error('Erro ao gerenciar favorito:', error);
             }
+        }
+
+        function updateFavoriteIcons() {
+            videoContainers.forEach((container, index) => {
+                const source = document.getElementById(`source${index + 1}`);
+                const favoriteIcon = document.getElementById(`favorite${index + 1}`);
+                if (source.src) {
+                    const file = decodeURIComponent(source.src.split('/video/')[1]);
+                    favoriteIcon.className = `favorite-overlay bi ${favorites.includes(file) ? 'bi-star-fill text-warning' : 'bi-star'}`;
+                } else {
+                    favoriteIcon.className = 'favorite-overlay bi bi-star';
+                }
+            });
         }
 
         async function loadSelectedPlaylist() {
@@ -334,29 +355,24 @@
                 updateFileList(currentFiles);
                 return;
             }
-            toggleSpinner(true);
             try {
                 if (name === 'favorites') {
-                    currentFiles = favorites.map(f => ({ path: f, duration: 0 }));
+                    currentFiles = favorites.map(f => ({ path: f }));
                     playedVideos.clear();
                     updateFileList(currentFiles);
-                    showNotification(`Favoritos carregados: ${currentFiles.length} arquivos`, false);
                     console.log(`Favoritos carregados: ${currentFiles.length} arquivos`);
                 } else {
                     const response = await fetch('/playlists');
                     if (!response.ok) throw new Error(`Erro ao carregar playlists: ${response.statusText}`);
                     const playlists = await response.json();
-                    currentFiles = playlists[name].files.map(f => ({path: f, duration: playlists[name].play_count}));
+                    currentFiles = playlists[name] ? playlists[name].files.map(f => ({ path: f })) : [];
                     playedVideos.clear();
                     updateFileList(currentFiles);
-                    showNotification(`Playlist ${name} carregada com ${currentFiles.length} arquivos`, false);
                     console.log(`Playlist ${name} carregada com ${currentFiles.length} arquivos`);
                 }
             } catch (error) {
-                showNotification('Erro ao carregar playlist: ' + error.message, true);
                 console.error('Erro ao carregar playlist:', error);
-            } finally {
-                toggleSpinner(false);
+                alert('Erro ao carregar playlist: ' + error.message);
             }
         }
 
@@ -364,7 +380,6 @@
             const select = document.getElementById('sessionSelect');
             const name = select.value;
             if (!name) return;
-            toggleSpinner(true);
             try {
                 const response = await fetch('/sessions');
                 if (!response.ok) throw new Error(`Erro ao carregar sessões: ${response.statusText}`);
@@ -387,13 +402,11 @@
                         player.load();
                     }
                 });
-                showNotification(`Sessão ${name} carregada com ${sessionVideos.length} vídeos`, false);
+                updateFavoriteIcons();
                 console.log(`Sessão ${name} carregada com ${sessionVideos.length} vídeos`);
             } catch (error) {
-                showNotification('Erro ao carregar sessão: ' + error.message, true);
                 console.error('Erro ao carregar sessão:', error);
-            } finally {
-                toggleSpinner(false);
+                alert('Erro ao carregar sessão: ' + error.message);
             }
         }
 
@@ -401,12 +414,12 @@
             try {
                 const name = prompt('Digite o nome da playlist:');
                 if (!name || name.trim() === '') {
-                    showNotification('O nome da playlist é obrigatório!', true);
+                    alert('O nome da playlist é obrigatório!');
                     return;
                 }
                 const files = Array.from(document.querySelectorAll('#fileList li')).map(li => li.dataset.path);
                 if (files.length === 0) {
-                    showNotification('Nenhum arquivo selecionado para a playlist!', true);
+                    alert('Nenhum arquivo selecionado para a playlist!');
                     return;
                 }
                 console.log(`Salvando playlist: ${name} com ${files.length} arquivos`);
@@ -418,16 +431,15 @@
                 const result = await response.json();
                 console.log('Resposta do servidor:', result);
                 if (result.success) {
-                    showNotification('Playlist salva com sucesso!', false);
+                    alert('Playlist salva com sucesso!');
                     await loadPlaylists();
-                    await fetchStats();
                 } else {
                     console.error('Erro ao salvar playlist:', result.error);
-                    showNotification(`Erro ao salvar playlist: ${result.error || 'Erro desconhecido'}`, true);
+                    alert(`Erro ao salvar playlist: ${result.error || 'Erro desconhecido'}`);
                 }
             } catch (error) {
                 console.error('Erro ao salvar playlist:', error);
-                showNotification('Erro ao salvar playlist: ' + error.message, true);
+                alert('Erro ao salvar playlist: ' + error.message);
             }
         });
 
@@ -436,7 +448,7 @@
                 const select = document.getElementById('playlistSelect');
                 const name = select.value;
                 if (!name || name.trim() === '' || name === 'favorites') {
-                    showNotification('Selecione uma playlist válida para remover!', true);
+                    alert('Selecione uma playlist válida para remover!');
                     return;
                 }
                 if (!confirm(`Deseja remover a playlist "${name}"?`)) {
@@ -452,19 +464,18 @@
                 const result = await response.json();
                 console.log('Resposta do servidor:', result);
                 if (result.success) {
-                    showNotification('Playlist removida com sucesso!', false);
+                    alert('Playlist removida com sucesso!');
                     select.value = '';
                     currentFiles = [];
                     updateFileList([]);
                     await loadPlaylists();
-                    await fetchStats();
                 } else {
                     console.error('Erro ao remover playlist:', result.error);
-                    showNotification(`Erro ao remover playlist: ${result.error || 'Erro desconhecido'}`, true);
+                    alert(`Erro ao remover playlist: ${result.error || 'Erro desconhecido'}`);
                 }
             } catch (error) {
                 console.error('Erro ao remover playlist:', error);
-                showNotification('Erro ao remover playlist: ' + error.message, true);
+                alert('Erro ao remover playlist: ' + error.message);
             }
         });
 
@@ -475,7 +486,7 @@
                     return source.src ? decodeURIComponent(source.src.split('/video/')[1]) : null;
                 }).filter(v => v);
                 if (videos.length === 0) {
-                    showNotification('Nenhum vídeo selecionado para salvar na sessão!', true);
+                    alert('Nenhum vídeo selecionado para salvar na sessão!');
                     return;
                 }
                 const playlistName = document.getElementById('playlistSelect').value || 'Sem Playlist';
@@ -490,16 +501,15 @@
                 const result = await response.json();
                 console.log('Resposta do servidor:', result);
                 if (result.success) {
-                    showNotification('Sessão salva com sucesso!', false);
+                    alert('Sessão salva com sucesso!');
                     await loadSessions();
-                    await fetchStats();
                 } else {
                     console.error('Erro ao salvar sessão:', result.error);
-                    showNotification(`Erro ao salvar sessão: ${result.error || 'Erro desconhecido'}`, true);
+                    alert(`Erro ao salvar sessão: ${result.error || 'Erro desconhecido'}`);
                 }
             } catch (error) {
                 console.error('Erro ao salvar sessão:', error);
-                showNotification('Erro ao salvar sessão: ' + error.message, true);
+                alert('Erro ao salvar sessão: ' + error.message);
             }
         });
 
@@ -508,7 +518,7 @@
                 const select = document.getElementById('sessionSelect');
                 const name = select.value;
                 if (!name || name.trim() === '') {
-                    showNotification('Selecione uma sessão para remover!', true);
+                    alert('Selecione uma sessão para remover!');
                     return;
                 }
                 if (!confirm(`Deseja remover a sessão "${name}"?`)) {
@@ -524,17 +534,16 @@
                 const result = await response.json();
                 console.log('Resposta do servidor:', result);
                 if (result.success) {
-                    showNotification('Sessão removida com sucesso!', false);
+                    alert('Sessão removida com sucesso!');
                     select.value = '';
                     await loadSessions();
-                    await fetchStats();
                 } else {
                     console.error('Erro ao remover sessão:', result.error);
-                    showNotification(`Erro ao remover sessão: ${result.error || 'Erro desconhecido'}`, true);
+                    alert(`Erro ao remover sessão: ${result.error || 'Erro desconhecido'}`);
                 }
             } catch (error) {
                 console.error('Erro ao remover sessão:', error);
-                showNotification('Erro ao remover sessão: ' + error.message, true);
+                alert('Erro ao remover sessão: ' + error.message);
             }
         });
 
@@ -546,26 +555,15 @@
                 player.load();
                 player.pause();
             });
-            showNotification('Deck limpo!', false);
+            updateFavoriteIcons();
             console.log('Deck limpo');
         });
 
         document.getElementById('panicBtn').addEventListener('click', () => {
-            let sites = ['https://www.google.com', 'https://www.youtube.com', 'https://www.wikipedia.org'];
-            const customUrls = document.getElementById('panicUrls').value.trim();
-            if (customUrls) {
-                sites = customUrls.split(',').map(url => url.trim().startsWith('http') ? url : `https://${url}`);
-                localStorage.setItem('panicUrls', customUrls);
-            }
+            const sites = ['https://www.google.com', 'https://www.youtube.com', 'https://www.wikipedia.org'];
             const randomSite = sites[Math.floor(Math.random() * sites.length)];
             window.open(randomSite, '_blank');
-            showNotification('Botão de pânico acionado!', false);
             console.log('Botão de pânico acionado');
-        });
-
-        document.getElementById('panicUrls').addEventListener('input', () => {
-            const customUrls = document.getElementById('panicUrls').value.trim();
-            localStorage.setItem('panicUrls', customUrls);
         });
 
         function shuffleArray(array) {
@@ -593,7 +591,7 @@
 
         function shufflePlayer(playerIndex) {
             if (currentFiles.length === 0) {
-                showNotification('Nenhum arquivo disponível!', true);
+                alert('Nenhum arquivo disponível!');
                 return;
             }
             const selectedVideos = getUnplayedVideos(1);
@@ -604,12 +602,13 @@
             source.src = `/video/${encodeURIComponent(randomFile)}`;
             player.load();
             player.play().catch(err => console.error(`Erro ao tocar player ${playerIndex + 1}:`, err));
+            updateFavoriteIcons();
             startAutoShuffle(`shuffle${playerIndex + 1}`);
         }
 
         document.getElementById('wishMeLuck').addEventListener('click', () => {
             if (currentFiles.length === 0) {
-                showNotification('Nenhum arquivo disponível!', true);
+                alert('Nenhum arquivo disponível!');
                 return;
             }
             const shuffled = getUnplayedVideos(4);
@@ -622,13 +621,13 @@
                     player.play().catch(err => console.error(`Erro ao tocar player ${index + 1}:`, err));
                 }
             });
-            showNotification('Vídeos embaralhados!', false);
+            updateFavoriteIcons();
             startAutoShuffle('shuffle');
         });
 
         document.getElementById('randomSequence').addEventListener('click', () => {
             if (currentFiles.length < 4) {
-                showNotification('Pelo menos 4 arquivos são necessários!', true);
+                alert('Pelo menos 4 arquivos são necessários!');
                 return;
             }
             const sortedFiles = [...currentFiles].sort((a, b) => (a.path || a).localeCompare(b.path || b));
@@ -644,7 +643,7 @@
                     playedVideos.add(sequence[index].path || sequence[index]);
                 }
             });
-            showNotification('Sequência carregada!', false);
+            updateFavoriteIcons();
             startAutoShuffle('sequence');
         });
 
@@ -700,17 +699,14 @@
         document.getElementById('sortSelect').addEventListener('change', (e) => {
             const files = Array.from(document.querySelectorAll('#fileList li')).map(li => ({
                 path: li.dataset.path,
-                text: li.textContent,
-                duration: parseInt(li.dataset.duration || 0)
+                text: li.textContent
             }));
             if (e.target.value === 'name') {
                 files.sort((a, b) => a.text.localeCompare(b.text));
-            } else if (e.target.value === 'date') {
+            } else {
                 files.sort((a, b) => a.path.localeCompare(b.path));
-            } else if (e.target.value === 'duration') {
-                files.sort((a, b) => a.duration - b.duration);
             }
-            updateFileList(files);
+            updateFileList(files.map(f => ({ path: f.path })));
         });
 
         function updateFileList(files) {
@@ -719,12 +715,10 @@
             if (files && files.length > 0) {
                 files.forEach(file => {
                     const path = file.path || file;
-                    const duration = file.duration || 0;
                     const li = document.createElement('li');
                     li.className = 'list-group-item draggable d-flex align-items-center';
                     li.draggable = true;
                     li.dataset.path = path;
-                    li.dataset.duration = duration;
                     const isFavorite = favorites.includes(path);
                     const favoriteIcon = isFavorite ? 'bi-star-fill text-warning' : 'bi-star';
                     li.innerHTML = `
@@ -746,9 +740,14 @@
             }
         }
 
-        document.querySelectorAll('.video-player').forEach((player, index) => {
+        videoContainers.forEach((container, index) => {
+            const player = container.querySelector('.video-player');
             const source = document.getElementById(`source${index + 1}`);
             const errorOverlay = document.getElementById(`error${index + 1}`);
+            const favoriteIcon = document.getElementById(`favorite${index + 1}`);
+            const shareIcon = document.getElementById(`share${index + 1}`);
+            const speedSelect = document.getElementById(`speed${index + 1}`);
+
             player.parentElement.addEventListener('drop', (e) => {
                 e.preventDefault();
                 const file = e.dataTransfer.getData('text/plain');
@@ -763,8 +762,10 @@
                     });
                     playedVideos.add(file);
                     updateFileList(currentFiles);
+                    updateFavoriteIcons();
                 }
             });
+
             player.parentElement.addEventListener('dragover', (e) => e.preventDefault());
 
             player.addEventListener('dblclick', () => {
@@ -776,21 +777,49 @@
                     player.msRequestFullscreen();
                 }
             });
+
+            favoriteIcon.addEventListener('click', () => {
+                if (source.src) {
+                    const file = decodeURIComponent(source.src.split('/video/')[1]);
+                    toggleFavorite(file);
+                } else {
+                    alert(`Nenhum vídeo no player ${index + 1}!`);
+                }
+            });
+
+            shareIcon.addEventListener('click', () => {
+                if (source.src) {
+                    const file = decodeURIComponent(source.src.split('/video/')[1]);
+                    const videoUrl = `${window.location.origin}/video/${encodeURIComponent(file)}`;
+                    if (navigator.share) {
+                        navigator.share({
+                            title: `EndoFlix Video: ${file.split(/[\\/]/).pop()}`,
+                            url: videoUrl
+                        }).catch(err => console.error('Erro ao compartilhar:', err));
+                    } else {
+                        navigator.clipboard.writeText(videoUrl).then(() => {
+                            alert('URL copiada para a área de transferência!');
+                        }).catch(err => {
+                            console.error('Erro ao copiar URL:', err);
+                            alert('Erro ao copiar URL!');
+                        });
+                    }
+                } else {
+                    alert(`Nenhum vídeo no player ${index + 1}!`);
+                }
+            });
+
+            speedSelect.addEventListener('change', () => {
+                player.playbackRate = parseFloat(speedSelect.value);
+            });
         });
 
         document.getElementById('playlistSelect').addEventListener('change', loadSelectedPlaylist);
         document.getElementById('sessionSelect').addEventListener('change', loadSelectedSession);
 
-        // Carregar URLs de pânico salvas
-        const savedPanicUrls = localStorage.getItem('panicUrls');
-        if (savedPanicUrls) {
-            document.getElementById('panicUrls').value = savedPanicUrls;
-        }
-
         loadPlaylists();
         loadSessions();
         loadFavorites();
-        fetchStats();
         updatePlayerSizes();
     </script>
     <script src="/static/keymap.js"></script>
