@@ -1,6 +1,4 @@
-let isAllPaused = false;
-
-document.addEventListener('keydown', (e) => {
+document.addEventListener('keydown', e => {
     const videoContainers = document.querySelectorAll('.video-container');
     if (e.key === 's' || e.key === 'S') {
         document.getElementById('wishMeLuck').click();
@@ -64,26 +62,23 @@ document.addEventListener('keydown', (e) => {
         });
         showNotification(allMuted ? 'Som ativado!' : 'Som desativado!', false);
     } else if (e.key === 'p' || e.key === 'P') {
-        if (!isAllPaused) {
-            videoContainers.forEach(container => {
-                const player = container.querySelector('.video-player');
-                player.pause();
-            });
-            showNotification('Todos os players pausados!', false);
-        } else {
-            videoContainers.forEach(container => {
-                const player = container.querySelector('.video-player');
-                const source = container.querySelector('source');
-                if (source.src && player.paused) {
-                    player.play().catch(err => {
-                        console.error(`Erro ao tocar player ${player.id}:`, err);
-                        showNotification(`Erro ao tocar ${player.id}!`, true);
-                    });
-                }
-            });
-            showNotification('Todos os players tocando!', false);
-        }
-        isAllPaused = !isAllPaused;
+        videoContainers.forEach(container => {
+            const player = container.querySelector('.video-player');
+            if (!player.paused) player.pause();
+        });
+        showNotification('Todos os players pausados!', false);
+    } else if (e.key === 'o' || e.key === 'O') {
+        videoContainers.forEach(container => {
+            const player = container.querySelector('.video-player');
+            const source = container.querySelector('source');
+            if (source.src && player.paused) {
+                player.play().catch(err => {
+                    console.error(`Erro ao tocar player ${player.id}:`, err);
+                    showNotification(`Erro ao tocar ${player.id}!`, true);
+                });
+            }
+        });
+        showNotification('Todos os players tocando!', false);
     } else if (e.key === "'") {
         document.getElementById('panicBtn').click();
     } else if (e.key === 'c' || e.key === 'C') {
