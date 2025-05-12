@@ -8,6 +8,7 @@ from datetime import datetime
 import hashlib
 import subprocess
 import json
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 app = Flask(__name__)
 TRANSCODE_DIR = Path("transcode")
@@ -46,7 +47,7 @@ def get_video_metadata(file_path):
             "-v", "error",
             "-show_entries", "stream=codec_type,codec_name,width,height,duration",
             "-of", "json",
-            str(file_path)  # Converter WindowsPath para string
+            str(file_path)
         ]
         app.logger.debug(f"Executando comando ffprobe: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -78,13 +79,13 @@ def get_video_metadata(file_path):
             "video_codec": "unknown"
         }
 
-def process_file(file_path):
-    stats = os.stat(file_path)
-    hash_id = calculate_hash(file_path)
-    metadata = get_video_metadata(file_path)
+def process_file(file):
+    stats = os.stat(file)
+    hash_id = calculate_hash(file)
+    metadata = get_video_metadata(file)
     return {
         "hash_id": hash_id,
-        "file_path": str(file_path),
+        "file_path": str(file),
         "size_bytes": stats.st_size,
         "created_at": datetime.fromtimestamp(stats.st_ctime),
         "modified_at": datetime.fromtimestamp(stats.st_mtime),
@@ -144,14 +145,32 @@ def get_media_files(folder):
     if not folder_path.exists() or not folder_path.is_dir():
         app.logger.error(f"Pasta inválida: {folder}")
         return media
+
+    # Listar todos os arquivos de mídia
+    files_to_process = []
     for file in folder_path.rglob('*'):
         if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']:
-            app.logger.debug(f"Processando arquivo: {file}")
-            file_data = process_file(file)
-            media.append({"path": file_data["file_path"], "duration": file_data["duration_seconds"]})
-            conn = get_db_connection()
-            index_file(conn, file_data)
-            conn.close()
+            files_to_process.append(file)
+
+    if not files_to_process:
+        app.logger.warning(f"Nenhum arquivo de mídia encontrado na pasta {folder}")
+        return media
+
+    # Processar arquivos em paralelo usando ProcessPoolExecutor
+    with ProcessPoolExecutor(max_workers=8) as executor:  # 8 workers para 8 núcleos
+        future_to_file = {executor.submit(process_file, file): file for file in files_to_process}
+        for future in as_completed(future_to_file):
+            file = future_to_file[future]
+            try:
+                file_data = future.result()
+                media.append({"path": file_data["file_path"], "duration": file_data["duration_seconds"]})
+                # Indexar no banco (sequencial para evitar conflitos no PostgreSQL)
+                conn = get_db_connection()
+                index_file(conn, file_data)
+                conn.close()
+            except Exception as e:
+                app.logger.error(f"Erro ao processar {file}: {e}")
+
     app.logger.info(f"Encontrados {len(media)} arquivos na pasta {folder}")
     return media
 
@@ -468,7 +487,7 @@ def analytics():
         cur.execute("SELECT name, files, play_count FROM endoflix_playlist")
         playlists = [{"name": row[0], "files": row[1], "play_count": row[2]} for row in cur.fetchall()]
 
-        # Vídeos mais reproduzidos (baseado em endoflix_files)
+        # Vídeos mais reproduzidos
         cur.execute("SELECT file_path, view_count FROM endoflix_files ORDER BY view_count DESC LIMIT 10")
         top_videos = [{"path": row[0], "play_count": row[1]} for row in cur.fetchall()]
 
