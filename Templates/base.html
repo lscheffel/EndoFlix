@@ -26,6 +26,21 @@
         .speed-overlay select { font-size: 0.9em; padding: 2px; }
         .favorite-btn { cursor: pointer; margin-right: 5px; }
         .played-indicator { margin-left: 5px; }
+        /* Estilo para o spinner */
+        .spinner {
+            display: none;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 5px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="bg-dark text-light">
@@ -107,6 +122,8 @@
             <div class="p-2">
                 <input type="text" id="folderInput" class="form-control compact-control" placeholder="Caminho da pasta (ex.: X:\Tiktok)">
                 <button onclick="scanFolder()" class="btn btn-primary compact-btn compact-control">Carregar Pasta</button>
+                <!-- Adicionar o spinner -->
+                <div id="loadingSpinner" class="spinner"></div>
                 <select id="playlistSelect" class="form-select compact-control" onchange="loadSelectedPlaylist()">
                     <option value="">Selecionar Playlist</option>
                     <option value="favorites">Favoritos</option>
@@ -235,21 +252,33 @@
                 alert('Digite o caminho da pasta!');
                 return;
             }
-            const response = await fetch('/scan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ folder })
-            });
-            if (!response.ok) throw new Error(`Erro na resposta: ${response.statusText}`);
-            const data = await response.json();
-            if (data.files && data.files.length > 0) {
-                currentFiles = data.files;
-                playedVideos.clear();
-                updateFileList(currentFiles);
-                document.getElementById('playlistSelect').value = '';
-            } else {
-                alert('Erro: ' + (data.error || 'Nenhum arquivo encontrado'));
-                updateFileList([]);
+            const spinner = document.getElementById('loadingSpinner');
+            
+            // Mostrar o spinner
+            spinner.style.display = 'block';
+
+            try {
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder })
+                });
+                if (!response.ok) throw new Error(`Erro na resposta: ${response.statusText}`);
+                const data = await response.json();
+                if (data.files && data.files.length > 0) {
+                    currentFiles = data.files;
+                    playedVideos.clear();
+                    updateFileList(currentFiles);
+                    document.getElementById('playlistSelect').value = '';
+                } else {
+                    alert('Erro: ' + (data.error || 'Nenhum arquivo encontrado'));
+                    updateFileList([]);
+                }
+            } catch (error) {
+                alert('Erro ao carregar pasta: ' + error.message);
+            } finally {
+                // Esconder o spinner
+                spinner.style.display = 'none';
             }
         }
 
