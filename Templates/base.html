@@ -26,7 +26,6 @@
         .speed-overlay select { font-size: 0.9em; padding: 2px; }
         .favorite-btn { cursor: pointer; margin-right: 5px; }
         .played-indicator { margin-left: 5px; }
-        /* Estilo para o spinner */
         .spinner {
             display: none;
             border: 4px solid #f3f3f3;
@@ -122,7 +121,6 @@
             <div class="p-2">
                 <input type="text" id="folderInput" class="form-control compact-control" placeholder="Caminho da pasta (ex.: X:\Tiktok)">
                 <button onclick="scanFolder()" class="btn btn-primary compact-btn compact-control">Carregar Pasta</button>
-                <!-- Adicionar o spinner -->
                 <div id="loadingSpinner" class="spinner"></div>
                 <select id="playlistSelect" class="form-select compact-control" onchange="loadSelectedPlaylist()">
                     <option value="">Selecionar Playlist</option>
@@ -253,32 +251,85 @@
                 return;
             }
             const spinner = document.getElementById('loadingSpinner');
-            
-            // Mostrar o spinner
+            const fileList = document.getElementById('fileList');
             spinner.style.display = 'block';
+            currentFiles = [];
+            fileList.innerHTML = '';
 
-            try {
-                const response = await fetch('/scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ folder })
-                });
-                if (!response.ok) throw new Error(`Erro na resposta: ${response.statusText}`);
-                const data = await response.json();
-                if (data.files && data.files.length > 0) {
-                    currentFiles = data.files;
-                    playedVideos.clear();
-                    updateFileList(currentFiles);
-                    document.getElementById('playlistSelect').value = '';
-                } else {
-                    alert('Erro: ' + (data.error || 'Nenhum arquivo encontrado'));
-                    updateFileList([]);
-                }
-            } catch (error) {
-                alert('Erro ao carregar pasta: ' + error.message);
-            } finally {
-                // Esconder o spinner
+            // Enviar requisição POST para iniciar o escaneamento
+            const response = await fetch('/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder })
+            });
+
+            if (!response.ok) {
                 spinner.style.display = 'none';
+                alert('Erro ao iniciar escaneamento: ' + response.statusText);
+                return;
+            }
+
+            // Usar EventSource para receber atualizações
+            const eventSource = new EventSource(`/scan?folder=${encodeURIComponent(folder)}`);
+            let connectionRetries = 0;
+            const maxRetries = 3;
+
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.status === 'start') {
+                    alert(`Iniciando escaneamento de ${data.total} arquivos...`);
+                } else if (data.status === 'update' || data.status === 'skipped') {
+                    if (data.status === 'update') {
+                        currentFiles.push(data.file);
+                    }
+                    updateFileList(currentFiles);
+                    connectionRetries = 0; // Resetar retries em caso de mensagem bem-sucedida
+                } else if (data.status === 'error') {
+                    alert(`Erro: ${data.message || data.file + ': ' + data.message}`);
+                } else if (data.status === 'end') {
+                    spinner.style.display = 'none';
+                    eventSource.close();
+                    playedVideos.clear();
+                    document.getElementById('playlistSelect').value = '';
+                    alert(`Escaneamento concluído: ${currentFiles.length} arquivos novos de ${data.total} verificados`);
+                    if (currentFiles.length > 0) {
+                        // Salvar automaticamente como playlist temporária
+                        saveTempPlaylist(folder);
+                    }
+                }
+            };
+
+            eventSource.onerror = () => {
+                connectionRetries++;
+                if (connectionRetries >= maxRetries) {
+                    spinner.style.display = 'none';
+                    eventSource.close();
+                    alert('Erro de conexão persistente. Escaneamento interrompido.');
+                    if (currentFiles.length > 0) {
+                        updateFileList(currentFiles);
+                        saveTempPlaylist(folder);
+                    }
+                } else {
+                    alert(`Erro de conexão, tentativa ${connectionRetries}/${maxRetries}...`);
+                }
+            };
+        }
+
+        async function saveTempPlaylist(folder) {
+            const name = `Temp_${folder.replace(/[\\/:]/g, '_')}_${new Date().toISOString().replace(/[:.]/g, '-')}`;
+            const files = currentFiles.map(f => f.path);
+            const response = await fetch('/playlists', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, files })
+            });
+            const result = await response.json();
+            if (result.success) {
+                await loadPlaylists();
+                document.getElementById('playlistSelect').value = name;
+                alert(`Playlist temporária "${name}" criada com ${files.length} arquivos`);
+            } else {
+                alert(`Erro ao criar playlist temporária: ${result.error}`);
             }
         }
 

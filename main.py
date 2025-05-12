@@ -98,6 +98,30 @@ def process_file(file):
         "is_favorite": False
     }
 
+def check_existing_hash(conn, hash_id, file_path):
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT file_path, size_bytes, created_at, modified_at FROM endoflix_files WHERE hash_id = %s", (hash_id,))
+        result = cur.fetchone()
+        if result:
+            existing_path, existing_size, existing_created, existing_modified = result
+            current_stats = os.stat(file_path)
+            current_size = current_stats.st_size
+            current_created = datetime.fromtimestamp(current_stats.st_ctime)
+            current_modified = datetime.fromtimestamp(current_stats.st_mtime)
+            if (existing_path == file_path and 
+                existing_size == current_size and 
+                existing_created == current_created and 
+                existing_modified == current_modified):
+                app.logger.debug(f"Arquivo {file_path} já indexado e inalterado")
+                return True
+        return False
+    except Exception as e:
+        app.logger.error(f"Erro ao verificar hash existente para {file_path}: {e}")
+        return False
+    finally:
+        cur.close()
+
 def index_file(conn, file_data):
     cur = conn.cursor()
     try:
@@ -139,14 +163,13 @@ def index_file(conn, file_data):
         cur.close()
 
 def get_media_files(folder):
-    media = []
     folder_path = Path(folder)
     app.logger.debug(f"Escanando pasta: {folder}")
     if not folder_path.exists() or not folder_path.is_dir():
         app.logger.error(f"Pasta inválida: {folder}")
-        return media
+        yield f"data: {json.dumps({'status': 'error', 'message': 'Pasta inválida ou não encontrada'})}\n\n"
+        return
 
-    # Listar todos os arquivos de mídia
     files_to_process = []
     for file in folder_path.rglob('*'):
         if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']:
@@ -154,25 +177,45 @@ def get_media_files(folder):
 
     if not files_to_process:
         app.logger.warning(f"Nenhum arquivo de mídia encontrado na pasta {folder}")
-        return media
+        yield f"data: {json.dumps({'status': 'end', 'total': 0, 'message': 'Nenhum arquivo de mídia encontrado'})}\n\n"
+        return
 
-    # Processar arquivos em paralelo usando ProcessPoolExecutor
-    with ProcessPoolExecutor(max_workers=8) as executor:  # 8 workers para 8 núcleos
-        future_to_file = {executor.submit(process_file, file): file for file in files_to_process}
-        for future in as_completed(future_to_file):
-            file = future_to_file[future]
-            try:
-                file_data = future.result()
-                media.append({"path": file_data["file_path"], "duration": file_data["duration_seconds"]})
-                # Indexar no banco (sequencial para evitar conflitos no PostgreSQL)
-                conn = get_db_connection()
-                index_file(conn, file_data)
-                conn.close()
-            except Exception as e:
-                app.logger.error(f"Erro ao processar {file}: {e}")
+    conn = get_db_connection()
+    files_to_index = []
+    for file in files_to_process:
+        hash_id = calculate_hash(file)
+        if not check_existing_hash(conn, hash_id, file):
+            files_to_index.append(file)
+        else:
+            media_item = {"path": str(file), "duration": 0}  # Duration não necessário para arquivos já indexados
+            yield f"data: {json.dumps({'status': 'skipped', 'file': media_item, 'message': 'Arquivo já indexado'})}\n\n"
 
-    app.logger.info(f"Encontrados {len(media)} arquivos na pasta {folder}")
-    return media
+    conn.close()
+
+    if not files_to_index:
+        yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_process), 'message': 'Nenhum novo arquivo para indexar'})}\n\n"
+        return
+
+    def generate_updates():
+        yield f"data: {json.dumps({'status': 'start', 'total': len(files_to_index)})}\n\n"
+        with ProcessPoolExecutor(max_workers=8) as executor:
+            future_to_file = {executor.submit(process_file, file): file for file in files_to_index}
+            for future in as_completed(future_to_file):
+                file = future_to_file[future]
+                try:
+                    file_data = future.result()
+                    media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
+                    conn = get_db_connection()
+                    index_file(conn, file_data)
+                    conn.close()
+                    yield f"data: {json.dumps({'status': 'update', 'file': media_item})}\n\n"
+                except Exception as e:
+                    app.logger.error(f"Erro ao processar {file}: {e}")
+                    yield f"data: {json.dumps({'status': 'error', 'file': str(file), 'message': str(e)})}\n\n"
+        yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_index)})}\n\n"
+
+    for update in generate_updates():
+        yield update
 
 def serve_video_range(input_path):
     range_header = request.headers.get('Range', None)
@@ -198,14 +241,12 @@ def serve_video_range(input_path):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Verificar se o arquivo está na tabela
         cur.execute("SELECT 1 FROM endoflix_files WHERE file_path = %s", (input_path,))
         if not cur.fetchone():
             app.logger.warning(f"Arquivo {input_path} não encontrado em endoflix_files, indexando agora")
             file_data = process_file(input_path)
             index_file(conn, file_data)
 
-        # Incrementar visualizações
         cur.execute(
             "UPDATE endoflix_files SET view_count = view_count + 1, last_viewed_at = CURRENT_TIMESTAMP WHERE file_path = %s",
             (input_path,)
@@ -250,16 +291,11 @@ def scan():
     folder = request.json.get('folder')
     app.logger.debug(f"Recebido pedido para escanear pasta: {folder}")
     folder_path = Path(folder)
-    if folder_path.exists() and folder_path.is_dir():
-        files = get_media_files(folder)
-        if files:
-            app.logger.info(f"Encontrados {len(files)} arquivos na pasta {folder}")
-            return jsonify({'files': files})
-        else:
-            app.logger.warning(f"Nenhum arquivo de vídeo encontrado na pasta {folder}")
-            return jsonify({'error': 'Nenhum arquivo de vídeo encontrado'}), 404
-    app.logger.error(f"Pasta inválida ou não encontrada: {folder}")
-    return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
+    if not folder_path.exists() or not folder_path.is_dir():
+        app.logger.error(f"Pasta inválida ou não encontrada: {folder}")
+        return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
+
+    return Response(get_media_files(folder), mimetype='text/event-stream')
 
 @app.route('/playlists', methods=['GET', 'POST'])
 def playlists():
@@ -475,7 +511,6 @@ def analytics():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Estatísticas gerais
         cur.execute("SELECT COUNT(*) FROM endoflix_files")
         video_count = cur.fetchone()[0] or 0
         cur.execute("SELECT COUNT(*) FROM endoflix_playlist")
@@ -483,22 +518,18 @@ def analytics():
         cur.execute("SELECT COUNT(*) FROM endoflix_session")
         session_count = cur.fetchone()[0] or 0
 
-        # Playlists com play_count
         cur.execute("SELECT name, files, play_count FROM endoflix_playlist")
         playlists = [{"name": row[0], "files": row[1], "play_count": row[2]} for row in cur.fetchall()]
 
-        # Vídeos mais reproduzidos
         cur.execute("SELECT file_path, view_count FROM endoflix_files ORDER BY view_count DESC LIMIT 10")
         top_videos = [{"path": row[0], "play_count": row[1]} for row in cur.fetchall()]
 
-        # Distribuição por tipo de arquivo
         cur.execute("SELECT file_path FROM endoflix_files")
         file_types = Counter()
         for row in cur.fetchall():
             ext = Path(row[0]).suffix.lower()
             file_types[ext] += 1
 
-        # Sessões com timestamps
         cur.execute("SELECT name, videos FROM endoflix_session")
         sessions = []
         for row in cur.fetchall():
@@ -526,7 +557,6 @@ def analytics():
                     "timestamp": datetime.now()
                 })
 
-        # Uso de players em sessões
         player_usage = [0, 0, 0, 0]
         for session in sessions:
             for i, video in enumerate(session["videos"][:4]):
