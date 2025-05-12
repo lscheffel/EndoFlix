@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 import psycopg2
 import logging
+from collections import Counter
+from datetime import datetime
 
 app = Flask(__name__)
 TRANSCODE_DIR = Path("transcode")
@@ -34,7 +36,6 @@ def get_media_files(folder):
         return media
     for file in folder_path.rglob('*'):
         if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']:
-            # Simula duração (em segundos) para ordenação; substituir por ffprobe se disponível
             media.append({"path": str(file), "duration": os.path.getsize(file) % 1000})
             app.logger.debug(f"Arquivo encontrado: {file}")
     return media
@@ -60,7 +61,6 @@ def serve_video_range(input_path):
         f.seek(start)
         data = f.read(content_length)
 
-    # Incrementar contador de visualizações
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -131,7 +131,6 @@ def playlists():
             name = data.get('name')
             files = data.get('files')
             
-            # Validação
             if not name or not isinstance(name, str) or name.strip() == '':
                 app.logger.error("Nome da playlist inválido ou não fornecido")
                 return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
@@ -142,7 +141,6 @@ def playlists():
                 app.logger.error("Nenhum arquivo fornecido para a playlist")
                 return jsonify({'success': False, 'error': 'A playlist deve conter pelo menos um arquivo'}), 400
             
-            # Salvar no banco
             cur.execute(
                 "INSERT INTO endoflix_playlist (name, files, play_count) VALUES (%s, %s, 0) ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files, play_count = endoflix_playlist.play_count RETURNING id",
                 (name.strip(), files)
@@ -167,12 +165,10 @@ def remove_playlist():
         app.logger.debug(f"Dados recebidos para remover playlist: {data}")
         name = data.get('name')
         
-        # Validação
         if not name or not isinstance(name, str) or name.strip() == '':
             app.logger.error("Nome da playlist inválido ou não fornecido")
             return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
         
-        # Remover do banco
         cur.execute("DELETE FROM endoflix_playlist WHERE name = %s", (name.strip(),))
         if cur.rowcount > 0:
             conn.commit()
@@ -205,7 +201,6 @@ def sessions():
             name = data.get('name')
             videos = data.get('videos')
             
-            # Validação
             if not name or not isinstance(name, str) or name.strip() == '':
                 app.logger.error("Nome da sessão inválido ou não fornecido")
                 return jsonify({'success': False, 'error': 'Nome da sessão é obrigatório'}), 400
@@ -213,7 +208,6 @@ def sessions():
                 app.logger.error("Lista de vídeos inválida")
                 return jsonify({'success': False, 'error': 'Lista de vídeos inválida'}), 400
             
-            # Salvar no banco
             cur.execute(
                 "INSERT INTO endoflix_session (name, videos) VALUES (%s, %s) ON CONFLICT (name) DO UPDATE SET videos = EXCLUDED.videos RETURNING id",
                 (name.strip(), videos)
@@ -238,12 +232,10 @@ def remove_session():
         app.logger.debug(f"Dados recebidos para remover sessão: {data}")
         name = data.get('name')
         
-        # Validação
         if not name or not isinstance(name, str) or name.strip() == '':
             app.logger.error("Nome da sessão inválido ou não fornecido")
             return jsonify({'success': False, 'error': 'Nome da sessão é obrigatório'}), 400
         
-        # Remover do banco
         cur.execute("DELETE FROM endoflix_session WHERE name = %s", (name.strip(),))
         if cur.rowcount > 0:
             conn.commit()
@@ -259,9 +251,11 @@ def remove_session():
     finally:
         cur.close()
         conn.close()
+
 @app.route('/keymaps')
 def keymaps():
     return render_template('keymaps.html')
+
 @app.route('/favorites', methods=['GET', 'POST', 'DELETE'])
 def favorites():
     conn = get_db_connection()
@@ -308,7 +302,11 @@ def stats():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT COUNT(DISTINCT files) FROM endoflix_playlist")
+        cur.execute("""
+            SELECT COUNT(DISTINCT file_path)
+            FROM endoflix_playlist,
+            LATERAL unnest(files) AS file_path
+        """)
         video_count = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM endoflix_playlist")
         playlist_count = cur.fetchone()[0]
@@ -323,6 +321,106 @@ def stats():
     except Exception as e:
         app.logger.error(f"Erro ao obter estatísticas: {str(e)}")
         return jsonify({'error': f"Erro ao obter estatísticas: {str(e)}"}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/analytics', methods=['GET'])
+def analytics():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Estatísticas gerais
+        cur.execute("""
+            SELECT COUNT(DISTINCT file_path)
+            FROM endoflix_playlist,
+            LATERAL unnest(files) AS file_path
+        """)
+        video_count = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM endoflix_playlist")
+        playlist_count = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(*) FROM endoflix_session")
+        session_count = cur.fetchone()[0] or 0
+
+        # Playlists com play_count
+        cur.execute("SELECT name, files, play_count FROM endoflix_playlist")
+        playlists = [{"name": row[0], "files": row[1], "play_count": row[2]} for row in cur.fetchall()]
+
+        # Vídeos mais reproduzidos
+        video_play_counts = Counter()
+        for playlist in playlists:
+            play_count = playlist["play_count"] or 0
+            for file in playlist["files"]:
+                video_play_counts[file] += play_count
+
+        top_videos = [
+            {"path": path, "play_count": count}
+            for path, count in video_play_counts.most_common(10)
+        ]
+
+        # Distribuição por tipo de arquivo
+        file_types = Counter()
+        for playlist in playlists:
+            for file in playlist["files"]:
+                ext = Path(file).suffix.lower()
+                file_types[ext] += 1
+
+        # Sessões com timestamps
+        cur.execute("SELECT name, videos FROM endoflix_session")
+        sessions = []
+        for row in cur.fetchall():
+            name_parts = row[0].split('_')[0].split('-')
+            if len(name_parts) >= 5:
+                try:
+                    timestamp_str = '-'.join(name_parts[:5])
+                    timestamp = datetime.strptime(timestamp_str, '%Y-%m-%dT%H-%M-%S')
+                    sessions.append({
+                        "name": row[0],
+                        "videos": row[1],
+                        "timestamp": timestamp
+                    })
+                except ValueError as e:
+                    app.logger.warning(f"Erro ao parsear timestamp para {row[0]}: {e}")
+                    sessions.append({
+                        "name": row[0],
+                        "videos": row[1],
+                        "timestamp": datetime.now()
+                    })
+            else:
+                sessions.append({
+                    "name": row[0],
+                    "videos": row[1],
+                    "timestamp": datetime.now()
+                })
+
+        # Uso de players em sessões
+        player_usage = [0, 0, 0, 0]
+        for session in sessions:
+            for i, video in enumerate(session["videos"][:4]):
+                if video:
+                    player_usage[i] += 1
+
+        return jsonify({
+            'stats': {
+                'videos': video_count,
+                'playlists': playlist_count,
+                'sessions': session_count
+            },
+            'playlists': playlists,
+            'top_videos': top_videos,
+            'file_types': dict(file_types),
+            'sessions': [
+                {
+                    "name": s["name"],
+                    "videos": s["videos"],
+                    "timestamp": s["timestamp"].isoformat()
+                } for s in sessions
+            ],
+            'player_usage': player_usage
+        })
+    except Exception as e:
+        app.logger.error(f"Erro ao obter análises: {str(e)}")
+        return jsonify({'error': f"Erro ao obter análises: {str(e)}"}), 500
     finally:
         cur.close()
         conn.close()

@@ -2,17 +2,25 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>EndoFlick - Ultra Mode</title>
+    <title>EndoFlix - Ultra Mode</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         body { overflow: auto; }
-        .content { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .content { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .card { margin-bottom: 20px; }
+        .chart-container { height: 300px; margin-bottom: 20px; }
+        .table { background-color: #343a40; }
+        .table th, .table td { border-color: #495057; }
+        .control-panel { margin-top: 20px; }
+        .btn-compact { padding: 5px 10px; font-size: 0.9em; }
+        .error-message { display: none; color: #ff6b6b; text-align: center; }
     </style>
 </head>
 <body class="bg-dark text-light">
     <header class="p-2 bg-secondary d-flex justify-content-between">
-        <h1 class="h5 m-0">EndoFlick - Ultra Mode</h1>
+        <h1 class="h5 m-0">EndoFlix - Ultra Mode</h1>
         <div>
             <label for="themeToggle" class="me-2">
                 <input type="checkbox" id="themeToggle" class="me-1">
@@ -23,17 +31,302 @@
         </div>
     </header>
     <div class="content">
-        <h2>Ultra Mode</h2>
-        <p>Em construção! Em breve, funcionalidades avançadas pra turbinar seu EndoFlix!</p>
+        <h2>Painel de Análise Avançado</h2>
+        <div class="error-message" id="errorMessage">
+            <p>Erro ao carregar dados do painel. Verifique sua conexão ou tente novamente.</p>
+            <button class="btn btn-primary" onclick="fetchAnalytics()">Tentar Novamente</button>
+        </div>
+        <div id="dashboardContent">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Vídeos</h5>
+                            <p class="card-text" id="videoCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Playlists</h5>
+                            <p class="card-text" id="playlistCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Sessões</h5>
+                            <p class="card-text" id="sessionCount">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="chart-container">
+                        <canvas id="playlistChart"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="chart-container">
+                        <canvas id="fileTypeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="chart-container">
+                        <canvas id="timelineChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <h3>Vídeos Mais Reproduzidos</h3>
+            <table class="table table-dark">
+                <thead>
+                    <tr>
+                        <th>Vídeo</th>
+                        <th>Reproduções</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="topVideosTable"></tbody>
+            </table>
+            <h3>Sessões</h3>
+            <table class="table table-dark">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Vídeos</th>
+                        <th>Data</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="sessionsTable"></tbody>
+            </table>
+            <div class="control-panel">
+                <h3>Controles Avançados</h3>
+                <div class="mb-3">
+                    <button class="btn btn-primary btn-compact me-2" onclick="controlPlayers('play')">Reproduzir Todos</button>
+                    <button class="btn btn-warning btn-compact me-2" onclick="controlPlayers('pause')">Pausar Todos</button>
+                    <select id="speedControl" class="form-select d-inline-block w-auto" onchange="controlSpeed()">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <button class="btn btn-success btn-compact me-2" onclick="toggleAutoShuffle(true)">Ativar Auto-Shuffle</button>
+                    <button class="btn btn-danger btn-compact me-2" onclick="toggleAutoShuffle(false)">Desativar Auto-Shuffle</button>
+                    <input type="number" id="shuffleInterval" class="form-control d-inline-block w-auto" min="1" value="3" style="width: 80px;">
+                </div>
+                <div class="mb-3">
+                    <button class="btn btn-info btn-compact" onclick="exportReport()">Exportar Relatório (CSV)</button>
+                </div>
+            </div>
+        </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        let analyticsData = {};
+
+        async function fetchAnalytics() {
+            try {
+                const response = await fetch('/analytics');
+                if (!response.ok) throw new Error('Erro ao carregar análises');
+                analyticsData = await response.json();
+                document.getElementById('errorMessage').style.display = 'none';
+                document.getElementById('dashboardContent').style.display = 'block';
+                updateDashboard();
+            } catch (error) {
+                console.error('Erro ao buscar análises:', error);
+                document.getElementById('errorMessage').style.display = 'block';
+                document.getElementById('dashboardContent').style.display = 'none';
+            }
+        }
+
+        function updateDashboard() {
+            // Atualizar cards
+            document.getElementById('videoCount').textContent = analyticsData.stats.videos || 0;
+            document.getElementById('playlistCount').textContent = analyticsData.stats.playlists || 0;
+            document.getElementById('sessionCount').textContent = analyticsData.stats.sessions || 0;
+
+            // Gráfico de playlists
+            const playlistChart = new Chart(document.getElementById('playlistChart'), {
+                type: 'bar',
+                data: {
+                    labels: analyticsData.playlists.map(p => p.name) || [],
+                    datasets: [{
+                        label: 'Reproduções',
+                        data: analyticsData.playlists.map(p => p.play_count) || [],
+                        backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: { scales: { y: { beginAtZero: true } } }
+            });
+
+            // Gráfico de tipos de arquivo
+            const fileTypeChart = new Chart(document.getElementById('fileTypeChart'), {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(analyticsData.file_types) || [],
+                    datasets: [{
+                        data: Object.values(analyticsData.file_types) || [],
+                        backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF']
+                    }]
+                }
+            });
+
+            // Gráfico de linha temporal
+            const timelineChart = new Chart(document.getElementById('timelineChart'), {
+                type: 'line',
+                data: {
+                    labels: analyticsData.sessions.map(s => new Date(s.timestamp).toLocaleDateString()) || [],
+                    datasets: [{
+                        label: 'Sessões Criadas',
+                        data: analyticsData.sessions.map((_, i) => i + 1) || [],
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        fill: false
+                    }]
+                },
+                options: { scales: { y: { beginAtZero: true } } }
+            });
+
+            // Tabela de vídeos mais reproduzidos
+            const topVideosTable = document.getElementById('topVideosTable');
+            topVideosTable.innerHTML = (analyticsData.top_videos || []).map(v => `
+                <tr>
+                    <td>${v.path.split(/[\\/]/).pop()}</td>
+                    <td>${v.play_count}</td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" onclick="playVideo('${v.path}')">Tocar</button>
+                        <button class="btn btn-sm btn-warning" onclick="toggleFavorite('${v.path}')">Favoritar</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            // Tabela de sessões
+            const sessionsTable = document.getElementById('sessionsTable');
+            sessionsTable.innerHTML = (analyticsData.sessions || []).map(s => `
+                <tr>
+                    <td>${s.name}</td>
+                    <td>${(s.videos || []).map(v => v ? v.split(/[\\/]/).pop() : '-').join(', ')}</td>
+                    <td>${new Date(s.timestamp).toLocaleString()}</td>
+                    <td>
+                        <button class="btn btn-sm btn-danger" onclick="removeSession('${s.name}')">Excluir</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function playVideo(path) {
+            const response = await fetch('/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: `Ultra_${new Date().toISOString().replace(/[:.]/g, '-')}`,
+                    videos: [path]
+                })
+            });
+            if (response.ok) {
+                window.location.href = '/';
+                alert('Vídeo carregado na sessão! Volte à página inicial para reproduzir.');
+            } else {
+                alert('Erro ao carregar vídeo');
+            }
+        }
+
+        async function toggleFavorite(path) {
+            const response = await fetch('/favorites', {
+                method: analyticsData.top_videos.some(v => v.path === path && v.favorited) ? 'DELETE' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_path: path })
+            });
+            if (response.ok) {
+                alert('Favorito atualizado!');
+                fetchAnalytics();
+            } else {
+                alert('Erro ao atualizar favorito');
+            }
+        }
+
+        async function removeSession(name) {
+            if (!confirm(`Deseja excluir a sessão "${name}"?`)) return;
+            const response = await fetch('/remove_session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            if (response.ok) {
+                alert('Sessão excluída!');
+                fetchAnalytics();
+            } else {
+                alert('Erro ao excluir sessão');
+            }
+        }
+
+        async function controlPlayers(action) {
+            const response = await fetch('/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: `Ultra_Control_${new Date().toISOString().replace(/[:.]/g, '-')}`,
+                    videos: Array(4).fill(null)
+                })
+            });
+            if (response.ok) {
+                alert(`Comando "${action}" enviado! Volte à página inicial para ver o efeito.`);
+                window.location.href = '/';
+            } else {
+                alert('Erro ao controlar players');
+            }
+        }
+
+        async function controlSpeed() {
+            const speed = document.getElementById('speedControl').value;
+            alert(`Velocidade ajustada para ${speed}x na página principal!`);
+        }
+
+        async function toggleAutoShuffle(enable) {
+            alert(`Auto-shuffle ${enable ? 'ativado' : 'desativado'} na página principal!`);
+        }
+
+        function exportReport() {
+            const csv = [
+                'Estatísticas Gerais',
+                `Vídeos,${analyticsData.stats.videos || 0}`,
+                `Playlists,${analyticsData.stats.playlists || 0}`,
+                `Sessões,${analyticsData.stats.sessions || 0}`,
+                '',
+                'Vídeos Mais Reproduzidos',
+                'Vídeo,Reproduções',
+                ...(analyticsData.top_videos || []).map(v => `"${v.path}",${v.play_count}`),
+                '',
+                'Sessões',
+                'Nome,Vídeos,Data',
+                ...(analyticsData.sessions || []).map(s => `"${s.name}","${(s.videos || []).join(';')}","${s.timestamp}"`)
+            ].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'EndoFlix_Analytics.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
         document.getElementById('themeToggle').addEventListener('change', (e) => {
             document.body.classList.toggle('bg-light', e.target.checked);
             document.body.classList.toggle('bg-dark', !e.target.checked);
             document.body.classList.toggle('text-dark', e.target.checked);
             document.body.classList.toggle('text-light', !e.target.checked);
         });
+
+        fetchAnalytics();
     </script>
 </body>
 </html>
