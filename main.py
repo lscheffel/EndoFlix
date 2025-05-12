@@ -5,9 +5,13 @@ import psycopg2
 import logging
 from collections import Counter
 from datetime import datetime
+import hashlib
+import subprocess
+import json
 
 app = Flask(__name__)
 TRANSCODE_DIR = Path("transcode")
+FFPROBE_PATH = r"C:\Program Files\FFMPEG\bin\ffprobe.exe"
 
 # Configurar logging
 logging.basicConfig(level=logging.DEBUG)
@@ -28,16 +32,127 @@ def get_db_connection():
         app.logger.error(f"Erro ao conectar ao banco: {e}")
         raise
 
+def calculate_hash(file_path):
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
+
+def get_video_metadata(file_path):
+    try:
+        cmd = [
+            FFPROBE_PATH,
+            "-v", "error",
+            "-show_entries", "stream=codec_type,codec_name,width,height,duration",
+            "-of", "json",
+            str(file_path)  # Converter WindowsPath para string
+        ]
+        app.logger.debug(f"Executando comando ffprobe: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        app.logger.debug(f"Saída bruta do ffprobe: {result.stdout}")
+        metadata = json.loads(result.stdout)
+        streams = metadata.get("streams", [])
+        video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
+        
+        duration = float(video_stream.get("duration", 0))
+        width = video_stream.get("width", 0)
+        height = video_stream.get("height", 0)
+        resolution = f"{width}x{height}" if width and height else "unknown"
+        orientation = "portrait" if width < height else "landscape" if width > height else "square"
+        video_codec = video_stream.get("codec_name", "unknown")
+        
+        app.logger.info(f"Metadados extraídos para {file_path}: duration={duration}, resolution={resolution}, orientation={orientation}, codec={video_codec}")
+        return {
+            "duration_seconds": duration,
+            "resolution": resolution,
+            "orientation": orientation,
+            "video_codec": video_codec
+        }
+    except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError, ValueError) as e:
+        app.logger.error(f"Erro ao extrair metadados de {file_path} com ffprobe: {e}")
+        return {
+            "duration_seconds": 0,
+            "resolution": "unknown",
+            "orientation": "unknown",
+            "video_codec": "unknown"
+        }
+
+def process_file(file_path):
+    stats = os.stat(file_path)
+    hash_id = calculate_hash(file_path)
+    metadata = get_video_metadata(file_path)
+    return {
+        "hash_id": hash_id,
+        "file_path": str(file_path),
+        "size_bytes": stats.st_size,
+        "created_at": datetime.fromtimestamp(stats.st_ctime),
+        "modified_at": datetime.fromtimestamp(stats.st_mtime),
+        "duration_seconds": metadata["duration_seconds"],
+        "resolution": metadata["resolution"],
+        "orientation": metadata["orientation"],
+        "video_codec": metadata["video_codec"],
+        "view_count": 0,
+        "last_viewed_at": None,
+        "is_favorite": False
+    }
+
+def index_file(conn, file_data):
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO endoflix_files (hash_id, file_path, size_bytes, created_at, modified_at, video_codec, resolution, orientation, duration_seconds, view_count, last_viewed_at, is_favorite)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (hash_id) DO UPDATE
+            SET file_path = EXCLUDED.file_path,
+                size_bytes = EXCLUDED.size_bytes,
+                created_at = EXCLUDED.created_at,
+                modified_at = EXCLUDED.modified_at,
+                video_codec = EXCLUDED.video_codec,
+                resolution = EXCLUDED.resolution,
+                orientation = EXCLUDED.orientation,
+                duration_seconds = EXCLUDED.duration_seconds,
+                view_count = EXCLUDED.view_count,
+                last_viewed_at = EXCLUDED.last_viewed_at,
+                is_favorite = EXCLUDED.is_favorite
+        """, (
+            file_data["hash_id"],
+            file_data["file_path"],
+            file_data["size_bytes"],
+            file_data["created_at"],
+            file_data["modified_at"],
+            file_data["video_codec"],
+            file_data["resolution"],
+            file_data["orientation"],
+            file_data["duration_seconds"],
+            file_data["view_count"],
+            file_data["last_viewed_at"],
+            file_data["is_favorite"]
+        ))
+        conn.commit()
+        app.logger.info(f"Arquivo indexado/atualizado: {file_data['file_path']}")
+    except Exception as e:
+        conn.rollback()
+        app.logger.error(f"Erro ao indexar {file_data['file_path']}: {e}")
+    finally:
+        cur.close()
+
 def get_media_files(folder):
     media = []
     folder_path = Path(folder)
+    app.logger.debug(f"Escanando pasta: {folder}")
     if not folder_path.exists() or not folder_path.is_dir():
         app.logger.error(f"Pasta inválida: {folder}")
         return media
     for file in folder_path.rglob('*'):
         if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']:
-            media.append({"path": str(file), "duration": os.path.getsize(file) % 1000})
-            app.logger.debug(f"Arquivo encontrado: {file}")
+            app.logger.debug(f"Processando arquivo: {file}")
+            file_data = process_file(file)
+            media.append({"path": file_data["file_path"], "duration": file_data["duration_seconds"]})
+            conn = get_db_connection()
+            index_file(conn, file_data)
+            conn.close()
+    app.logger.info(f"Encontrados {len(media)} arquivos na pasta {folder}")
     return media
 
 def serve_video_range(input_path):
@@ -64,13 +179,25 @@ def serve_video_range(input_path):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        # Verificar se o arquivo está na tabela
+        cur.execute("SELECT 1 FROM endoflix_files WHERE file_path = %s", (input_path,))
+        if not cur.fetchone():
+            app.logger.warning(f"Arquivo {input_path} não encontrado em endoflix_files, indexando agora")
+            file_data = process_file(input_path)
+            index_file(conn, file_data)
+
+        # Incrementar visualizações
         cur.execute(
-            "UPDATE endoflix_playlist SET play_count = play_count + 1 WHERE %s = ANY(files)",
+            "UPDATE endoflix_files SET view_count = view_count + 1, last_viewed_at = CURRENT_TIMESTAMP WHERE file_path = %s",
             (input_path,)
         )
+        if cur.rowcount == 0:
+            app.logger.error(f"Falha ao atualizar visualizações para {input_path}, arquivo ainda não indexado")
+        else:
+            app.logger.info(f"Visualização incrementada para {input_path}")
         conn.commit()
     except Exception as e:
-        app.logger.error(f"Erro ao atualizar play_count: {e}")
+        app.logger.error(f"Erro ao atualizar visualizações para {input_path}: {e}")
         conn.rollback()
     finally:
         cur.close()
@@ -262,7 +389,7 @@ def favorites():
     cur = conn.cursor()
     try:
         if request.method == 'GET':
-            cur.execute("SELECT file_path FROM endoflix_favorites")
+            cur.execute("SELECT file_path FROM endoflix_files WHERE is_favorite = TRUE")
             favorites = [row[0] for row in cur.fetchall()]
             app.logger.debug(f"Favoritos carregados: {len(favorites)}")
             return jsonify(favorites)
@@ -273,7 +400,7 @@ def favorites():
                 app.logger.error("Caminho do arquivo inválido")
                 return jsonify({'success': False, 'error': 'Caminho do arquivo é obrigatório'}), 400
             cur.execute(
-                "INSERT INTO endoflix_favorites (file_path) VALUES (%s) ON CONFLICT DO NOTHING",
+                "UPDATE endoflix_files SET is_favorite = TRUE WHERE file_path = %s",
                 (file_path,)
             )
             conn.commit()
@@ -285,7 +412,10 @@ def favorites():
             if not file_path or not isinstance(file_path, str):
                 app.logger.error("Caminho do arquivo inválido")
                 return jsonify({'success': False, 'error': 'Caminho do arquivo é obrigatório'}), 400
-            cur.execute("DELETE FROM endoflix_favorites WHERE file_path = %s", (file_path,))
+            cur.execute(
+                "UPDATE endoflix_files SET is_favorite = FALSE WHERE file_path = %s",
+                (file_path,)
+            )
             conn.commit()
             app.logger.info(f"Favorito removido: {file_path}")
             return jsonify({'success': True})
@@ -302,11 +432,7 @@ def stats():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("""
-            SELECT COUNT(DISTINCT file_path)
-            FROM endoflix_playlist,
-            LATERAL unnest(files) AS file_path
-        """)
+        cur.execute("SELECT COUNT(*) FROM endoflix_files")
         video_count = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM endoflix_playlist")
         playlist_count = cur.fetchone()[0]
@@ -331,11 +457,7 @@ def analytics():
     cur = conn.cursor()
     try:
         # Estatísticas gerais
-        cur.execute("""
-            SELECT COUNT(DISTINCT file_path)
-            FROM endoflix_playlist,
-            LATERAL unnest(files) AS file_path
-        """)
+        cur.execute("SELECT COUNT(*) FROM endoflix_files")
         video_count = cur.fetchone()[0] or 0
         cur.execute("SELECT COUNT(*) FROM endoflix_playlist")
         playlist_count = cur.fetchone()[0] or 0
@@ -346,24 +468,16 @@ def analytics():
         cur.execute("SELECT name, files, play_count FROM endoflix_playlist")
         playlists = [{"name": row[0], "files": row[1], "play_count": row[2]} for row in cur.fetchall()]
 
-        # Vídeos mais reproduzidos
-        video_play_counts = Counter()
-        for playlist in playlists:
-            play_count = playlist["play_count"] or 0
-            for file in playlist["files"]:
-                video_play_counts[file] += play_count
-
-        top_videos = [
-            {"path": path, "play_count": count}
-            for path, count in video_play_counts.most_common(10)
-        ]
+        # Vídeos mais reproduzidos (baseado em endoflix_files)
+        cur.execute("SELECT file_path, view_count FROM endoflix_files ORDER BY view_count DESC LIMIT 10")
+        top_videos = [{"path": row[0], "play_count": row[1]} for row in cur.fetchall()]
 
         # Distribuição por tipo de arquivo
+        cur.execute("SELECT file_path FROM endoflix_files")
         file_types = Counter()
-        for playlist in playlists:
-            for file in playlist["files"]:
-                ext = Path(file).suffix.lower()
-                file_types[ext] += 1
+        for row in cur.fetchall():
+            ext = Path(row[0]).suffix.lower()
+            file_types[ext] += 1
 
         # Sessões com timestamps
         cur.execute("SELECT name, videos FROM endoflix_session")
