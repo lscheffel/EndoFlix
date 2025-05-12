@@ -88,6 +88,7 @@
                     <tr>
                         <th>Vídeo</th>
                         <th>Reproduções</th>
+                        <th>Favorito</th>
                         <th>Ações</th>
                     </tr>
                 </thead>
@@ -132,6 +133,21 @@
     <script>
         let analyticsData = {};
 
+        function alert(message) {
+            const notificationEl = document.createElement('div');
+            notificationEl.textContent = message;
+            notificationEl.style.position = 'fixed';
+            notificationEl.style.top = '10px';
+            notificationEl.style.right = '10px';
+            notificationEl.style.background = 'rgba(0,0,0,0.8)';
+            notificationEl.style.color = 'white';
+            notificationEl.style.padding = '10px';
+            notificationEl.style.borderRadius = '5px';
+            notificationEl.style.zIndex = '1000';
+            document.body.appendChild(notificationEl);
+            setTimeout(() => notificationEl.remove(), 3000);
+        }
+
         async function fetchAnalytics() {
             try {
                 const response = await fetch('/analytics');
@@ -148,12 +164,10 @@
         }
 
         function updateDashboard() {
-            // Atualizar cards
             document.getElementById('videoCount').textContent = analyticsData.stats.videos || 0;
             document.getElementById('playlistCount').textContent = analyticsData.stats.playlists || 0;
             document.getElementById('sessionCount').textContent = analyticsData.stats.sessions || 0;
 
-            // Gráfico de playlists
             const playlistChart = new Chart(document.getElementById('playlistChart'), {
                 type: 'bar',
                 data: {
@@ -169,7 +183,6 @@
                 options: { scales: { y: { beginAtZero: true } } }
             });
 
-            // Gráfico de tipos de arquivo
             const fileTypeChart = new Chart(document.getElementById('fileTypeChart'), {
                 type: 'pie',
                 data: {
@@ -181,7 +194,6 @@
                 }
             });
 
-            // Gráfico de linha temporal
             const timelineChart = new Chart(document.getElementById('timelineChart'), {
                 type: 'line',
                 data: {
@@ -196,20 +208,19 @@
                 options: { scales: { y: { beginAtZero: true } } }
             });
 
-            // Tabela de vídeos mais reproduzidos
             const topVideosTable = document.getElementById('topVideosTable');
             topVideosTable.innerHTML = (analyticsData.top_videos || []).map(v => `
                 <tr>
                     <td>${v.path.split(/[\\/]/).pop()}</td>
                     <td>${v.play_count}</td>
+                    <td>${v.favorited ? '<i class="bi bi-star-fill text-warning"></i>' : '<i class="bi bi-star"></i>'}</td>
                     <td>
                         <button class="btn btn-sm btn-primary" onclick="playVideo('${v.path}')">Tocar</button>
-                        <button class="btn btn-sm btn-warning" onclick="toggleFavorite('${v.path}')">Favoritar</button>
+                        <button class="btn btn-sm btn-warning" onclick="toggleFavorite('${v.path}')">${v.favorited ? 'Desfavoritar' : 'Favoritar'}</button>
                     </td>
                 </tr>
             `).join('');
 
-            // Tabela de sessões
             const sessionsTable = document.getElementById('sessionsTable');
             sessionsTable.innerHTML = (analyticsData.sessions || []).map(s => `
                 <tr>
@@ -224,65 +235,82 @@
         }
 
         async function playVideo(path) {
-            const response = await fetch('/sessions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: `Ultra_${new Date().toISOString().replace(/[:.]/g, '-')}`,
-                    videos: [path]
-                })
-            });
-            if (response.ok) {
-                window.location.href = '/';
-                alert('Vídeo carregado na sessão! Volte à página inicial para reproduzir.');
-            } else {
-                alert('Erro ao carregar vídeo');
+            try {
+                const response = await fetch('/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: `Ultra_${new Date().toISOString().replace(/[:.]/g, '-')}`,
+                        videos: [path, null, null, null]
+                    })
+                });
+                if (response.ok) {
+                    alert('Vídeo carregado na sessão! Volte à página inicial para reproduzir.');
+                    window.location.href = '/';
+                } else {
+                    alert('Erro ao carregar vídeo');
+                }
+            } catch (e) {
+                alert('Erro ao carregar vídeo: ' + e.message);
             }
         }
 
         async function toggleFavorite(path) {
-            const response = await fetch('/favorites', {
-                method: analyticsData.top_videos.some(v => v.path === path && v.favorited) ? 'DELETE' : 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file_path: path })
-            });
-            if (response.ok) {
-                alert('Favorito atualizado!');
-                fetchAnalytics();
-            } else {
-                alert('Erro ao atualizar favorito');
+            try {
+                const isFavorited = analyticsData.top_videos.some(v => v.path === path && v.favorited);
+                const response = await fetch('/favorites', {
+                    method: isFavorited ? 'DELETE' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_path: path })
+                });
+                if (response.ok) {
+                    alert('Favorito atualizado!');
+                    fetchAnalytics();
+                } else {
+                    alert('Erro ao atualizar favorito');
+                }
+            } catch (e) {
+                alert('Erro ao atualizar favorito: ' + e.message);
             }
         }
 
         async function removeSession(name) {
             if (!confirm(`Deseja excluir a sessão "${name}"?`)) return;
-            const response = await fetch('/remove_session', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name })
-            });
-            if (response.ok) {
-                alert('Sessão excluída!');
-                fetchAnalytics();
-            } else {
-                alert('Erro ao excluir sessão');
+            try {
+                const response = await fetch('/remove_session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                if (response.ok) {
+                    alert('Sessão excluída!');
+                    fetchAnalytics();
+                } else {
+                    alert('Erro ao excluir sessão');
+                }
+            } catch (e) {
+                alert('Erro ao excluir sessão: ' + e.message);
             }
         }
 
         async function controlPlayers(action) {
-            const response = await fetch('/sessions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: `Ultra_Control_${new Date().toISOString().replace(/[:.]/g, '-')}`,
-                    videos: Array(4).fill(null)
-                })
-            });
-            if (response.ok) {
-                alert(`Comando "${action}" enviado! Volte à página inicial para ver o efeito.`);
-                window.location.href = '/';
-            } else {
-                alert('Erro ao controlar players');
+            try {
+                const response = await fetch('/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: `Ultra_Control_${new Date().toISOString().replace(/[:.]/g, '-')}`,
+                        videos: Array(4).fill(null)
+                    })
+                });
+                if (response.ok) {
+                    alert(`Comando "${action}" enviado! Volte à página inicial para ver o efeito.`);
+                    window.location.href = '/';
+                } else {
+                    alert('Erro ao controlar players');
+                }
+            } catch (e) {
+                alert('Erro ao controlar players: ' + e.message);
             }
         }
 
@@ -303,12 +331,12 @@
                 `Sessões,${analyticsData.stats.sessions || 0}`,
                 '',
                 'Vídeos Mais Reproduzidos',
-                'Vídeo,Reproduções',
-                ...(analyticsData.top_videos || []).map(v => `"${v.path}",${v.play_count}`),
+                'Vídeo,Reproduções,Favoritado',
+                ...(analyticsData.top_videos || []).map(v => `"${v.path}",${v.play_count},${v.favorited ? 'Sim' : 'Não'}`),
                 '',
                 'Sessões',
                 'Nome,Vídeos,Data',
-                ...(analyticsData.sessions || []).map(s => `"${s.name}","${(s.videos || []).join(';')}","${s.timestamp}"`)
+                ...(analyticsData.sessions || []).map(s => `"${s.name}","${(s.videos || []).map(v => v || '-').join(';')}","${s.timestamp}"`)
             ].join('\n');
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
@@ -324,6 +352,16 @@
             document.body.classList.toggle('bg-dark', !e.target.checked);
             document.body.classList.toggle('text-dark', e.target.checked);
             document.body.classList.toggle('text-light', !e.target.checked);
+            document.querySelectorAll('.card').forEach(card => {
+                card.classList.toggle('bg-light', e.target.checked);
+                card.classList.toggle('bg-dark', !e.target.checked);
+                card.classList.toggle('text-dark', e.target.checked);
+                card.classList.toggle('text-light', !e.target.checked);
+            });
+            document.querySelectorAll('.table').forEach(table => {
+                table.classList.toggle('table-light', e.target.checked);
+                table.classList.toggle('table-dark', !e.target.checked);
+            });
         });
 
         fetchAnalytics();
