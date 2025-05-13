@@ -13,6 +13,7 @@ import redis
 import time
 import signal
 import sys
+from livereload import Server
 
 app = Flask(__name__)
 TRANSCODE_DIR = Path("transcode")
@@ -633,11 +634,16 @@ def analytics():
 def serve_video(filename):
     return serve_video_range(Path(filename))
 
+server = Server(app.wsgi_app)
+server.watch('templates/')
+server.watch('static/')
+server.serve(debug=True)
+
 if __name__ == '__main__':
     start_redis()
     init_redis()
     try:
-        app.run(port=5000)
+        app.run(port=5000, debug=True)
     finally:
         shutdown_redis()
         DB_POOL.closeall()
