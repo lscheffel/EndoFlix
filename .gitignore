@@ -53,6 +53,7 @@ htmlcov/
 Thumbs.db
 
 # Backups pessoais
+temp/
 backup/
 contrato_*.pdf
 contrato_*.html
