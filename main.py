@@ -634,16 +634,15 @@ def analytics():
 def serve_video(filename):
     return serve_video_range(Path(filename))
 
-server = Server(app.wsgi_app)
-server.watch('templates/')
-server.watch('static/')
-server.serve(debug=True)
-
 if __name__ == '__main__':
     start_redis()
     init_redis()
     try:
-        app.run(port=5000, debug=True)
+        from livereload import Server
+        server = Server(app)
+        server.watch('templates/')
+        server.watch('static/')
+        server.serve(port=5000, debug=True, open_url_delay=False)
     finally:
         shutdown_redis()
         DB_POOL.closeall()

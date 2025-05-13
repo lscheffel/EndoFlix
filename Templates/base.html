@@ -141,7 +141,7 @@
                     <button id="removeSession" class="btn btn-danger compact-btn">Remove Session</button>
                 </div>
                 <input type="text" id="filterInput" class="form-control compact-control" placeholder="Filtrar por nome">
-                <select id="sortSelect" class="form-select compact-control">
+                <select id="sortSelect" class="form-select compact-control" title="Sort Options">
                     <option value="name">A-Z</option>
                     <option value="date">Data</option>
                 </select>
@@ -907,5 +907,9 @@
         updatePlayerSizes();
     </script>
     <script src="/static/keymap.js"></script>
+    <script>
+    document.write('<script src=\"http://' + location.hostname + ':35729/livereload.js?snipver=1\"><\\/script>')
+    </script>
+
 </body>
 </html>
