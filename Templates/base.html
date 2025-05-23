@@ -23,8 +23,9 @@
         .shuffle-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 5px; }
         .favorite-overlay { position: absolute; top: 10px; left: 10px; z-index: 10; cursor: pointer; }
         .share-overlay { position: absolute; top: 40px; left: 10px; z-index: 10; cursor: pointer; }
+        .snapshot-overlay { position: absolute; top: 70px; left: 10px; z-index: 10; cursor: pointer; background: transparent; border: none; border-radius: 3px; padding: 1px; font-size: 18px; color: #fff; text-shadow: 0 0 3px black; }
+        .burst-overlay { position: absolute; top: 100px; left: 10px; z-index: 10; cursor: pointer; background: transparent; border: none; border-radius: 3px; padding: 1px; font-size: 18px; color: #fff; text-shadow: 0 0 3px black; }
         .speed-overlay { position: absolute; bottom: 10px; right: 10px; z-index: 10; }
-        .speed-overlay select { font-size: 0.9em; padding: 2px; }
         .favorite-btn { cursor: pointer; margin-right: 5px; }
         .played-indicator { margin-left: 5px; }
         .spinner { 
@@ -66,6 +67,8 @@
                     </video>
                     <i class="favorite-overlay bi bi-star" id="favorite1"></i>
                     <i class="share-overlay bi bi-share" id="share1"></i>
+                    <button class="snapshot-overlay" id="snapshot1">📸</button>
+                    <button class="burst-overlay" id="burst1">🔄</button>
                     <select class="speed-overlay" id="speed1">
                         <option value="1" selected>1x</option>
                         <option value="1.5">1.5x</option>
@@ -82,6 +85,8 @@
                     </video>
                     <i class="favorite-overlay bi bi-star" id="favorite2"></i>
                     <i class="share-overlay bi bi-share" id="share2"></i>
+                    <button class="snapshot-overlay" id="snapshot2">📸</button>
+                    <button class="burst-overlay" id="burst2">🔄</button>
                     <select class="speed-overlay" id="speed2">
                         <option value="1" selected>1x</option>
                         <option value="1.5">1.5x</option>
@@ -98,6 +103,8 @@
                     </video>
                     <i class="favorite-overlay bi bi-star" id="favorite3"></i>
                     <i class="share-overlay bi bi-share" id="share3"></i>
+                    <button class="snapshot-overlay" id="snapshot3">📸</button>
+                    <button class="burst-overlay" id="burst3">🔄</button>
                     <select class="speed-overlay" id="speed3">
                         <option value="1" selected>1x</option>
                         <option value="1.5">1.5x</option>
@@ -114,6 +121,8 @@
                     </video>
                     <i class="favorite-overlay bi bi-star" id="favorite4"></i>
                     <i class="share-overlay bi bi-share" id="share4"></i>
+                    <button class="snapshot-overlay" id="snapshot4">📸</button>
+                    <button class="burst-overlay" id="burst4">🔄</button>
                     <select class="speed-overlay" id="speed4">
                         <option value="1" selected>1x</option>
                         <option value="1.5">1.5x</option>
@@ -129,7 +138,35 @@
         <div class="playlist-frame" id="playlistFrame" style="width: 20%;">
             <div class="p-2">
                 <input type="text" id="folderInput" class="form-control compact-control" placeholder="Caminho da pasta (ex.: X:\Tiktok)">
-                <button onclick="scanFolder()" class="btn btn-primary compact-btn compact-control">Carregar Pasta</button>
+                <div class="d-flex gap-2 mt-2">
+                    <button onclick="scanFolder()" class="btn btn-primary compact-btn compact-control">Carregar Pasta</button>
+                    <select id="burstInterval" class="form-select compact-control" style="width: auto; height: calc(1.5rem + 4px);">
+                        <option value="100">0.1s</option>
+                        <option value="200" selected>0.2s</option>
+                        <option value="400">0.4s</option>
+                        <option value="600">0.6s</option>
+                        <option value="800">0.8s</option>
+                        <option value="1000">1.0s</option>
+                        <option value="1200">1.2s</option>
+                        <option value="1400">1.4s</option>
+                        <option value="1600">1.6s</option>
+                        <option value="1800">1.8s</option>
+                        <option value="2000">2.0s</option>
+                    </select>
+                    <select id="burstCount" class="form-select compact-control" style="width: auto; height: calc(1.5rem + 4px);">
+                        <option value="2">2 shots</option>
+                        <option value="3">3 shots</option>
+                        <option value="4">4 shots</option>
+                        <option value="5" selected>5 shots</option>
+                        <option value="6">6 shots</option>
+                        <option value="7">7 shots</option>
+                        <option value="8">8 shots</option>
+                        <option value="9">9 shots</option>
+                        <option value="10">10 shots</option>
+                        <option value="auto">Auto</option>
+                    </select>
+                    <button id="stopBurst" class="btn btn-danger compact-btn compact-control" style="display: none;">Stop</button>
+                </div>
                 <div id="loadingSpinner" class="spinner"></div>
                 <div id="spinnerText" class="spinner-text">Processando...</div>
                 <select id="playlistSelect" class="form-select compact-control" onchange="loadSelectedPlaylist()">
@@ -913,6 +950,120 @@
         loadFavorites();
         fetchStats();
         updatePlayerSizes();
+
+        // Função para criar snapshot
+        async function createSnapshot(video) {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const source = video.parentElement.querySelector('source');
+            if (!source.src) {
+                showNotification('Nenhum vídeo carregado!', true);
+                return;
+            }
+
+            try {
+                const imageData = canvas.toDataURL('image/webp', 0.9);
+                const videoPath = decodeURIComponent(source.src.split('/video/')[1]);
+                
+                const response = await fetch('/save_snapshot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_path: videoPath,
+                        image_data: imageData,
+                        is_burst: false
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showNotification('Snapshot salvo com sucesso!', false);
+                } else {
+                    showNotification(`Erro ao salvar snapshot: ${result.error}`, true);
+                }
+            } catch (e) {
+                showNotification(`Erro ao salvar snapshot: ${e.message}`, true);
+            }
+        }
+
+        // Função para criar burst
+        async function createBurst(video) {
+            const source = video.parentElement.querySelector('source');
+            if (!source.src) {
+                showNotification('Nenhum vídeo carregado!', true);
+                return;
+            }
+
+            const videoPath = decodeURIComponent(source.src.split('/video/')[1]);
+            const burstCountSelect = document.getElementById('burstCount');
+            const stopBurstBtn = document.getElementById('stopBurst');
+            let isAutoMode = burstCountSelect.value === 'auto';
+            let burstCount = isAutoMode ? 999 : parseInt(burstCountSelect.value);
+            const intervalMs = parseInt(document.getElementById('burstInterval').value);
+            let shouldStop = false;
+
+            stopBurstBtn.style.display = 'block';
+            stopBurstBtn.onclick = () => {
+                shouldStop = true;
+                stopBurstBtn.style.display = 'none';
+            };
+
+            // Captura todos os frames primeiro
+            const frames = [];
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+
+            for (let i = 0; i < burstCount && !shouldStop; i++) {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                frames.push(canvas.toDataURL('image/webp', 0.9));
+                await new Promise(resolve => setTimeout(resolve, intervalMs));
+            }
+
+            if (shouldStop) {
+                stopBurstBtn.style.display = 'none';
+                return;
+            }
+
+            // Envia todos os frames em lote
+            try {
+                const response = await fetch('/save_snapshot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_path: videoPath,
+                        frames: frames,
+                        is_burst: true
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showNotification(`Burst completo! ${frames.length} imagens salvas com sucesso.`, false);
+                } else {
+                    showNotification(`Erro ao salvar burst: ${result.error}`, true);
+                }
+            } catch (e) {
+                showNotification(`Erro ao salvar burst: ${e.message}`, true);
+            }
+
+            stopBurstBtn.style.display = 'none';
+        }
+
+        // Adicionar event listeners para os botões de snapshot e burst
+        for (let i = 1; i <= 4; i++) {
+            const snapshotBtn = document.getElementById(`snapshot${i}`);
+            const burstBtn = document.getElementById(`burst${i}`);
+            const video = document.getElementById(`player${i}`);
+
+            snapshotBtn.addEventListener('click', () => createSnapshot(video));
+            burstBtn.addEventListener('click', () => createBurst(video));
+        }
     </script>
     <script src="/static/keymap.js"></script>
 </body>

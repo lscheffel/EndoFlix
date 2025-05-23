@@ -8,11 +8,14 @@ from datetime import datetime
 import hashlib
 import subprocess
 import json
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
 import redis
 import time
 import signal
 import sys
+import base64
+import threading
+from queue import Queue
 
 app = Flask(__name__)
 TRANSCODE_DIR = Path("transcode")
@@ -634,11 +637,115 @@ def analytics():
 def serve_video(filename):
     return serve_video_range(Path(filename))
 
+def ensure_snapshots_dir(video_path):
+    video_dir = os.path.dirname(video_path)
+    snapshots_dir = os.path.join(video_dir, 'snapshots')
+    if not os.path.exists(snapshots_dir):
+        os.makedirs(snapshots_dir)
+    return snapshots_dir
+
+def save_snapshot_worker(snapshot_queue):
+    while True:
+        try:
+            data = snapshot_queue.get()
+            if data is None:
+                break
+
+            video_path = data['video_path']
+            image_data = data['image_data']
+            is_burst = data['is_burst']
+            burst_index = data['burst_index']
+
+            # Remove o prefixo da URL do vídeo
+            video_path = video_path.replace('/video/', '')
+            video_path = os.path.normpath(video_path)
+
+            # Cria a pasta snapshots se não existir
+            snapshots_dir = ensure_snapshots_dir(video_path)
+            
+            # Gera o nome do arquivo
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            if is_burst:
+                filename = f'burst_{timestamp}_{burst_index}.webp'
+            else:
+                filename = f'snapshot_{timestamp}.webp'
+            
+            # Salva a imagem
+            file_path = os.path.join(snapshots_dir, filename)
+            image_data = base64.b64decode(image_data.split(',')[1])
+            with open(file_path, 'wb') as f:
+                f.write(image_data)
+
+            snapshot_queue.task_done()
+        except Exception as e:
+            logging.error(f"Erro no worker de snapshot: {str(e)}")
+            snapshot_queue.task_done()
+
+# Inicializa o pool de workers para snapshots
+snapshot_queue = Queue()
+snapshot_workers = []
+for _ in range(6):  # Aumentado para 6 workers em paralelo
+    worker = threading.Thread(target=save_snapshot_worker, args=(snapshot_queue,))
+    worker.daemon = True
+    worker.start()
+    snapshot_workers.append(worker)
+
+@app.route('/save_snapshot', methods=['POST'])
+def save_snapshot():
+    try:
+        data = request.get_json()
+        video_path = data.get('video_path')
+        frames = data.get('frames', [])
+        image_data = data.get('image_data')
+        is_burst = data.get('is_burst', False)
+
+        if not video_path or (not frames and not image_data):
+            return jsonify({'success': False, 'error': 'Dados inválidos'}), 400
+
+        # Remove o prefixo da URL do vídeo
+        video_path = video_path.replace('/video/', '')
+        video_path = os.path.normpath(video_path)
+
+        # Cria a pasta snapshots se não existir
+        snapshots_dir = ensure_snapshots_dir(video_path)
+        
+        # Gera o timestamp base
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        if frames:  # Processamento em lote para burst
+            for i, frame_data in enumerate(frames, 1):
+                filename = f'burst_{timestamp}_{i}.webp'
+                file_path = os.path.join(snapshots_dir, filename)
+                image_data = base64.b64decode(frame_data.split(',')[1])
+                with open(file_path, 'wb') as f:
+                    f.write(image_data)
+        else:  # Processamento de snapshot único
+            filename = f'snapshot_{timestamp}.webp'
+            file_path = os.path.join(snapshots_dir, filename)
+            image_data = base64.b64decode(image_data.split(',')[1])
+            with open(file_path, 'wb') as f:
+                f.write(image_data)
+
+        return jsonify({
+            'success': True,
+            'message': 'Snapshot(s) salvo(s) com sucesso'
+        })
+    except Exception as e:
+        logging.error(f"Erro ao processar snapshot: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def cleanup_snapshot_workers():
+    for _ in range(len(snapshot_workers)):
+        snapshot_queue.put(None)
+    for worker in snapshot_workers:
+        worker.join()
+
 if __name__ == '__main__':
     start_redis()
     init_redis()
     try:
         app.run(port=5000)
     finally:
+        cleanup_snapshot_workers()
         shutdown_redis()
         DB_POOL.closeall()
