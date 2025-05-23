@@ -206,6 +206,7 @@ def check_existing_hash(conn, hash_id, file_path):
     finally:
         cur.close()
 
+## Only for testing
 def index_file(conn, file_data):
     cur = conn.cursor()
     try:
