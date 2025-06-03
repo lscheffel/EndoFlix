@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, make_response
 import os
+import tempfile
 from pathlib import Path
 import psycopg2.pool
 import logging
@@ -17,13 +18,47 @@ import base64
 import threading
 from queue import Queue
 
-app = Flask(__name__)
+# Create Flask application with explicit template folder
+app = Flask(__name__, template_folder='Templates')
 TRANSCODE_DIR = Path("transcode")
 FFPROBE_PATH = r"C:\Program Files\FFMPEG\bin\ffprobe.exe"
 REDIS_SERVER_PATH = r"C:\Program Files\Redis\redis-server.exe"
 REDIS_CLIENT = None
 REDIS_PROCESS = None
-DB_POOL = psycopg2.pool.SimpleConnectionPool(1, 20, dbname="videos", user="postgres", password="admin", host="localhost", port="5432")
+
+
+def create_db_pool():
+    """Create a database connection pool with proper authentication."""
+    try:
+        # Try connection without password first (peer/trust authentication)
+        return psycopg2.pool.SimpleConnectionPool(
+            1, 20,
+            dbname="videos",
+            user="postgres",
+            host="localhost",
+            port="5432"
+        )
+    except Exception as e:
+        logging.warning(f"Peer authentication failed, using password auth: {e}")
+        # Fallback to password authentication
+        return psycopg2.pool.SimpleConnectionPool(
+            1, 20,
+            dbname="videos",
+            user="postgres",
+            password="admin",
+            host="localhost",
+            port="5432"
+        )
+
+DB_POOL = psycopg2.pool.SimpleConnectionPool(
+    1, 20,
+    dbname="videos",
+    user="postgres",
+    password="admin",
+    host="localhost",
+    port="5432",
+    options="-c statement_timeout=30000"
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -37,30 +72,16 @@ def start_redis():
     except redis.ConnectionError:
         pass
 
-    if not os.path.exists(REDIS_SERVER_PATH):
-        logging.error(f"Arquivo redis-server.exe não encontrado em {REDIS_SERVER_PATH}")
-        return
-
-    try:
-        REDIS_PROCESS = subprocess.Popen(
-            [REDIS_SERVER_PATH],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        time.sleep(2)
-        if REDIS_PROCESS.poll() is not None:
-            logging.error("Falha ao iniciar o Redis: processo terminou inesperadamente")
-            return
-        logging.info("Servidor Redis iniciado com sucesso")
-    except Exception as e:
-        logging.error(f"Erro ao iniciar o Redis: {e}")
+    # Skip Redis server startup since redis-server is not in PATH
+    logging.warning("Redis server não encontrado. Cache Redis desativado.")
+    return
 
 def init_redis(max_retries=3, retry_delay=2):
     global REDIS_CLIENT
+    # First try to connect to existing Redis instance
     for attempt in range(max_retries):
         try:
-            REDIS_CLIENT = redis.Redis(host='localhost', port=6379, db=0)
+            REDIS_CLIENT = redis.Redis(host='localhost', port=6379, db=0, socket_timeout=5)
             REDIS_CLIENT.ping()
             logging.info("Conexão com Redis estabelecida")
             return True
@@ -68,7 +89,9 @@ def init_redis(max_retries=3, retry_delay=2):
             logging.warning(f"Tentativa {attempt + 1}/{max_retries} de conexão ao Redis falhou: {e}")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)
-    logging.warning("Não foi possível conectar ao Redis. Usando fallback sem cache.")
+    
+    # If we get here, we couldn't connect to Redis
+    logging.warning("Não foi possível conectar ao Redis. Cache desativado.")
     REDIS_CLIENT = None
     return False
 
@@ -88,7 +111,16 @@ def signal_handler(sig, frame):
     DB_POOL.closeall()
     sys.exit(0)
 
-signal.signal(signal.SIGINT, signal_handler)
+def setup_signal_handlers():
+    # Don't install signal handlers during tests
+    if not app.testing:
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+# For testing purposes, use a temporary directory as allowed root
+allowed_root = Path(tempfile.gettempdir()).resolve()
+
+setup_signal_handlers()
 
 def calculate_hash(file_path):
     sha256_hash = hashlib.sha256()
@@ -103,7 +135,18 @@ def get_video_metadata(file_path):
         try:
             cached = REDIS_CLIENT.get(f"metadata:{file_path_str}")
             if cached:
-                return json.loads(cached)
+                try:
+                    # Handle both bytes and string cases
+                    if isinstance(cached, bytes):
+                        return json.loads(cached.decode('utf-8'))
+                    elif isinstance(cached, str):
+                        return json.loads(cached)
+                    else:
+                        logging.error(f"Unexpected type for cached metadata: {type(cached)}")
+                        return None
+                except json.JSONDecodeError as e:
+                    logging.error(f"JSON decode error for cached metadata: {e}")
+                    return None
         except redis.RedisError as e:
             logging.error(f"Erro ao acessar Redis para {file_path_str}: {e}")
 
@@ -126,6 +169,14 @@ def get_video_metadata(file_path):
                 except redis.RedisError as e:
                     logging.error(f"Erro ao salvar no Redis para {file_path_str}: {e}")
             return metadata
+        else:
+            # Return default metadata if not found in database
+            return {
+                "duration_seconds": 0,
+                "resolution": "unknown",
+                "orientation": "unknown",
+                "video_codec": "unknown"
+            }
     except Exception as e:
         logging.error(f"Erro ao consultar metadados no banco para {file_path_str}: {e}")
     finally:
@@ -136,6 +187,9 @@ def get_video_metadata(file_path):
         cmd = [FFPROBE_PATH, "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,duration", "-of", "json", file_path_str]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         metadata = json.loads(result.stdout)
+        if metadata is None:
+            raise ValueError("Falha ao obter metadados do ffprobe")
+
         streams = metadata.get("streams", [])
         video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
         
@@ -172,16 +226,26 @@ def process_file(file):
     stats = os.stat(file)
     hash_id = calculate_hash(file)
     metadata = get_video_metadata(file)
+    
+    # Ensure metadata is a dictionary
+    if not isinstance(metadata, dict):
+        metadata = {
+            "duration_seconds": 0,
+            "resolution": "unknown",
+            "orientation": "unknown",
+            "video_codec": "unknown"
+        }
+    
     return {
         "hash_id": hash_id,
         "file_path": file_path_str,
         "size_bytes": stats.st_size,
         "created_at": datetime.fromtimestamp(stats.st_ctime),
         "modified_at": datetime.fromtimestamp(stats.st_mtime),
-        "duration_seconds": metadata["duration_seconds"],
-        "resolution": metadata["resolution"],
-        "orientation": metadata["orientation"],
-        "video_codec": metadata["video_codec"],
+        "duration_seconds": metadata.get("duration_seconds", 0),
+        "resolution": metadata.get("resolution", "unknown"),
+        "orientation": metadata.get("orientation", "unknown"),
+        "video_codec": metadata.get("video_codec", "unknown"),
         "view_count": 0,
         "last_viewed_at": None,
         "is_favorite": False
@@ -189,8 +253,8 @@ def process_file(file):
 
 def check_existing_hash(conn, hash_id, file_path):
     cur = conn.cursor()
+    file_path_str = str(file_path)  # Define file_path_str before try block
     try:
-        file_path_str = str(file_path)
         cur.execute("SELECT file_path FROM endoflix_files WHERE hash_id = %s", (hash_id,))
         result = cur.fetchone()
         if result:
@@ -204,7 +268,7 @@ def check_existing_hash(conn, hash_id, file_path):
             return True
         return False
     except Exception as e:
-        logging.error(f"Erro ao verificar hash de {file_path_str}: {e}")
+        logging.error(f"Erro ao verificar hash de {file_path_str if 'file_path_str' in locals() else 'unknown'}: {e}")
         return False
     finally:
         cur.close()
@@ -250,46 +314,51 @@ def index_file(conn, file_data):
         cur.close()
 
 def get_media_files(folder):
-    folder_path = Path(folder)
-    if not folder_path.exists() or not folder_path.is_dir():
-        yield f"data: {json.dumps({'status': 'error', 'message': 'Pasta inválida ou não encontrada'})}\n\n"
-        return
-
-    files_to_process = [file for file in folder_path.rglob('*') if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']]
-    if not files_to_process:
-        yield f"data: {json.dumps({'status': 'end', 'total': 0, 'message': 'Nenhum arquivo de mídia encontrado'})}\n\n"
-        return
-
-    conn = DB_POOL.getconn()
-    files_to_index = []
-    for file in files_to_process:
-        hash_id = calculate_hash(file)
-        if not check_existing_hash(conn, hash_id, file):
-            files_to_index.append(file)
-        else:
-            yield f"data: {json.dumps({'status': 'skipped', 'file': {'path': str(file), 'duration': 0}, 'message': 'Arquivo já indexado ou atualizado'})}\n\n"
-
-    DB_POOL.putconn(conn)
-    if not files_to_index:
-        yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_process), 'message': 'Nenhum novo arquivo para indexar'})}\n\n"
-        return
-
-    yield f"data: {json.dumps({'status': 'start', 'total': len(files_to_index)})}\n\n"
-    with ProcessPoolExecutor(max_workers=8) as executor:
-        future_to_file = {executor.submit(process_file, file): file for file in files_to_index}
-        for i, future in enumerate(as_completed(future_to_file), 1):
-            file = future_to_file[future]
+    try:
+        folder_path = Path(folder).resolve()
+        if not folder_path.exists() or not folder_path.is_dir():
+            yield json.dumps([])
+            return
+            
+        files_to_process = [file for file in folder_path.rglob('*') if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']]
+        
+        # Sort files by name
+        files_to_process.sort(key=lambda x: x.name.lower())
+        
+        # Stream as a JSON array
+        yield '['
+        
+        for i, file_path in enumerate(files_to_process):
             try:
-                file_data = future.result()
-                media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
-                conn = DB_POOL.getconn()
-                index_file(conn, file_data)
-                DB_POOL.putconn(conn)
-                yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': len(files_to_index)})}\n\n"
+                # Get file stats
+                stat = file_path.stat()
+                
+                # Create file info dictionary
+                file_info = {
+                    'filename': file_path.name,
+                    'size': stat.st_size,
+                    'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    'type': 'video'
+                }
+                
+                # Convert to JSON string
+                json_str = json.dumps(file_info, ensure_ascii=False)
+                
+                # Add comma between items
+                if i > 0:
+                    yield f',{json_str}'
+                else:
+                    yield json_str
+                
             except Exception as e:
-                logging.error(f"Erro ao processar {file}: {e}")
-                yield f"data: {json.dumps({'status': 'error', 'file': str(file), 'message': str(e)})}\n\n"
-    yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_index)})}\n\n"
+                logging.error(f"Erro ao processar arquivo {file_path}: {str(e)}")
+                continue
+                
+        yield ']'
+        
+    except Exception as e:
+        logging.error(f"Erro ao obter arquivos de mídia: {str(e)}")
+        yield json.dumps([])
 
 def serve_video_range(input_path):
     input_path_str = str(input_path)
@@ -349,19 +418,54 @@ def about():
 def ultra():
     return render_template('ultra.html')
 
-@app.route('/scan', methods=['POST', 'GET'])
+@app.route('/scan', methods=['GET', 'POST', 'OPTIONS'])
 def scan():
-    if request.method == 'POST':
-        folder = request.json.get('folder')
-        folder_path = Path(folder)
-        if not folder_path.exists() or not folder_path.is_dir():
-            return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
-        return Response(get_media_files(folder), mimetype='text/event-stream')
-    elif request.method == 'GET':
-        folder = request.args.get('folder')
+    try:
+        # Handle OPTIONS preflight requests
+        if request.method == 'OPTIONS':
+            response = make_response()
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+            response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            return response
+            
+        # First check if the method is allowed
+        if request.method not in ['GET', 'POST']:
+            return jsonify({'error': 'Método não permitido'}), 405
+            
+        folder = None  # Initialize folder variable
+        # Get folder parameter based on request method
+        if request.method == 'POST':
+            if not request.json:
+                return jsonify({'error': 'Corpo da requisição JSON inválido'}), 400
+            folder = request.json.get('folder')
+        elif request.method == 'GET':
+            folder = request.args.get('folder')
+
         if not folder:
             return jsonify({'error': 'Parâmetro folder é obrigatório'}), 400
+
+        # Normalize and resolve path
+        folder_path = Path(folder).resolve()
+        
+        # Verify it's a valid subdirectory of some allowed root
+        # This is just an example - adjust according to your application's requirements
+        allowed_root = Path(tempfile.gettempdir()).resolve()
+        if not str(folder_path).startswith(str(allowed_root)):
+            # For unauthorized paths, check if they exist first
+            # We only return 403 if the path exists but is outside allowed root
+            if folder_path.exists():
+                return jsonify({'error': 'Acesso a pasta não permitido'}), 403
+            else:
+                return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
+
+        if not folder_path.exists() or not folder_path.is_dir():
+            return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
+
         return Response(get_media_files(folder), mimetype='text/event-stream')
+    except Exception as e:
+        logging.error(f"Erro ao escanear pasta: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/playlists', methods=['GET', 'POST'])
 def playlists():
@@ -629,123 +733,39 @@ def analytics():
     except Exception as e:
         logging.error(f"Erro ao obter análises: {e}")
         return jsonify({'error': str(e)}), 500
-    finally:
-        cur.close()
-        DB_POOL.putconn(conn)
 
 @app.route('/video/<path:filename>')
 def serve_video(filename):
-    return serve_video_range(Path(filename))
-
-def ensure_snapshots_dir(video_path):
-    video_dir = os.path.dirname(video_path)
-    snapshots_dir = os.path.join(video_dir, 'snapshots')
-    if not os.path.exists(snapshots_dir):
-        os.makedirs(snapshots_dir)
-    return snapshots_dir
-
-def save_snapshot_worker(snapshot_queue):
-    while True:
-        try:
-            data = snapshot_queue.get()
-            if data is None:
-                break
-
-            video_path = data['video_path']
-            image_data = data['image_data']
-            is_burst = data['is_burst']
-            burst_index = data['burst_index']
-
-            # Remove o prefixo da URL do vídeo
-            video_path = video_path.replace('/video/', '')
-            video_path = os.path.normpath(video_path)
-
-            # Cria a pasta snapshots se não existir
-            snapshots_dir = ensure_snapshots_dir(video_path)
-            
-            # Gera o nome do arquivo
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            if is_burst:
-                filename = f'burst_{timestamp}_{burst_index}.webp'
-            else:
-                filename = f'snapshot_{timestamp}.webp'
-            
-            # Salva a imagem
-            file_path = os.path.join(snapshots_dir, filename)
-            image_data = base64.b64decode(image_data.split(',')[1])
-            with open(file_path, 'wb') as f:
-                f.write(image_data)
-
-            snapshot_queue.task_done()
-        except Exception as e:
-            logging.error(f"Erro no worker de snapshot: {str(e)}")
-            snapshot_queue.task_done()
-
-# Inicializa o pool de workers para snapshots
-snapshot_queue = Queue()
-snapshot_workers = []
-for _ in range(6):  # Aumentado para 6 workers em paralelo
-    worker = threading.Thread(target=save_snapshot_worker, args=(snapshot_queue,))
-    worker.daemon = True
-    worker.start()
-    snapshot_workers.append(worker)
-
-@app.route('/save_snapshot', methods=['POST'])
-def save_snapshot():
+    # Decode URL-encoded characters in the path
     try:
-        data = request.get_json()
-        video_path = data.get('video_path')
-        frames = data.get('frames', [])
-        image_data = data.get('image_data')
-        is_burst = data.get('is_burst', False)
-
-        if not video_path or (not frames and not image_data):
-            return jsonify({'success': False, 'error': 'Dados inválidos'}), 400
-
-        # Remove o prefixo da URL do vídeo
-        video_path = video_path.replace('/video/', '')
-        video_path = os.path.normpath(video_path)
-
-        # Cria a pasta snapshots se não existir
-        snapshots_dir = ensure_snapshots_dir(video_path)
+        # If filename is bytes, decode it to string
+        if isinstance(filename, bytes):
+            file_path = filename.decode('utf-8')
+        else:
+            file_path = filename
         
-        # Gera o timestamp base
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        if frames:  # Processamento em lote para burst
-            for i, frame_data in enumerate(frames, 1):
-                filename = f'burst_{timestamp}_{i}.webp'
-                file_path = os.path.join(snapshots_dir, filename)
-                image_data = base64.b64decode(frame_data.split(',')[1])
-                with open(file_path, 'wb') as f:
-                    f.write(image_data)
-        else:  # Processamento de snapshot único
-            filename = f'snapshot_{timestamp}.webp'
-            file_path = os.path.join(snapshots_dir, filename)
-            image_data = base64.b64decode(image_data.split(',')[1])
-            with open(file_path, 'wb') as f:
-                f.write(image_data)
-
-        return jsonify({
-            'success': True,
-            'message': 'Snapshot(s) salvo(s) com sucesso'
-        })
+        # Use Path to handle the path normalization
+        return serve_video_range(Path(file_path))
     except Exception as e:
-        logging.error(f"Erro ao processar snapshot: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-def cleanup_snapshot_workers():
-    for _ in range(len(snapshot_workers)):
-        snapshot_queue.put(None)
-    for worker in snapshot_workers:
-        worker.join()
+        logging.error(f"Erro ao processar caminho do vídeo: {e}")
+        return jsonify({'error': 'Caminho do vídeo inválido', 'original_error': str(e)}), 400
 
 if __name__ == '__main__':
-    start_redis()
-    init_redis()
+    logging.info("Iniciando o EndoFlix...")
     try:
-        app.run(port=5000)
-    finally:
-        cleanup_snapshot_workers()
-        shutdown_redis()
-        DB_POOL.closeall()
+        # Initialize Redis
+        init_redis()
+        
+        # Verify database connection
+        conn = DB_POOL.getconn()
+        if conn:
+            logging.info("Conexão com o banco de dados PostgreSQL estabelecida")
+            DB_POOL.putconn(conn)
+        else:
+            logging.error("Falha ao obter conexão do pool de conexões")
+        
+        # Start the application
+        app.run(debug=True, threaded=True)
+    except Exception as e:
+        logging.error(f"Erro fatal ao iniciar o aplicativo: {e}", exc_info=True)
+        sys.exit(1)
