@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, Response, make_response
+from flask import Flask, render_template, request, jsonify, Response, make_response, stream_with_context, Response as FlaskResponse
 import os
 import tempfile
 from pathlib import Path
@@ -18,37 +18,14 @@ import base64
 import threading
 from queue import Queue
 
-# Create Flask application with explicit template folder
 app = Flask(__name__, template_folder='Templates')
 TRANSCODE_DIR = Path("transcode")
-FFPROBE_PATH = r"C:\Program Files\FFMPEG\bin\ffprobe.exe"
-REDIS_SERVER_PATH = r"C:\Program Files\Redis\redis-server.exe"
+FFPROBE_PATH = r"C:\\Program Files\\FFMPEG\\bin\\ffprobe.exe"
+REDIS_SERVER_PATH = r"C:\\Program Files\\Redis\\redis-server.exe"
 REDIS_CLIENT = None
 REDIS_PROCESS = None
 
-
-def create_db_pool():
-    """Create a database connection pool with proper authentication."""
-    try:
-        # Try connection without password first (peer/trust authentication)
-        return psycopg2.pool.SimpleConnectionPool(
-            1, 20,
-            dbname="videos",
-            user="postgres",
-            host="localhost",
-            port="5432"
-        )
-    except Exception as e:
-        logging.warning(f"Peer authentication failed, using password auth: {e}")
-        # Fallback to password authentication
-        return psycopg2.pool.SimpleConnectionPool(
-            1, 20,
-            dbname="videos",
-            user="postgres",
-            password="admin",
-            host="localhost",
-            port="5432"
-        )
+HTML5_EXTENSIONS = {'.mp4', '.webm', '.ogg', '.ogv'}
 
 DB_POOL = psycopg2.pool.SimpleConnectionPool(
     1, 20,
@@ -71,14 +48,11 @@ def start_redis():
         return
     except redis.ConnectionError:
         pass
-
-    # Skip Redis server startup since redis-server is not in PATH
     logging.warning("Redis server não encontrado. Cache Redis desativado.")
     return
 
 def init_redis(max_retries=3, retry_delay=2):
     global REDIS_CLIENT
-    # First try to connect to existing Redis instance
     for attempt in range(max_retries):
         try:
             REDIS_CLIENT = redis.Redis(host='localhost', port=6379, db=0, socket_timeout=5)
@@ -89,8 +63,6 @@ def init_redis(max_retries=3, retry_delay=2):
             logging.warning(f"Tentativa {attempt + 1}/{max_retries} de conexão ao Redis falhou: {e}")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)
-    
-    # If we get here, we couldn't connect to Redis
     logging.warning("Não foi possível conectar ao Redis. Cache desativado.")
     REDIS_CLIENT = None
     return False
@@ -112,13 +84,9 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 def setup_signal_handlers():
-    # Don't install signal handlers during tests
     if not app.testing:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
-
-# For testing purposes, use a temporary directory as allowed root
-allowed_root = Path(tempfile.gettempdir()).resolve()
 
 setup_signal_handlers()
 
@@ -129,59 +97,110 @@ def calculate_hash(file_path):
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
-def get_video_metadata(file_path):
-    file_path_str = str(file_path)
+# Função auxiliar nova para sincronizar pastas com o DB
+def sync_directory_with_db(folder_path: Path, conn):
+    existing_files = {}
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT hash_id, file_path, modified_at FROM endoflix_files WHERE file_path LIKE %s", (str(folder_path) + '%',))
+        for row in cur.fetchall():
+            existing_files[row[1]] = {'hash_id': row[0], 'modified_at': row[2]}
+    except Exception as e:
+        logging.error(f"[SYNC] Erro ao buscar arquivos existentes: {e}")
+        return []
+
+    found_files = list(folder_path.rglob('*'))
+    updated_files = []
+
+    for file in found_files:
+        if not file.is_file() or file.suffix.lower() not in HTML5_EXTENSIONS:
+            continue
+        try:
+            hash_id = calculate_hash(file)
+            file_data = process_file(file)
+            previous = existing_files.get(str(file))
+            if not previous:
+                index_file(conn, file_data)
+                updated_files.append(file_data["file_path"])
+                logging.info(f"[SYNC] Novo arquivo indexado: {file}")
+            else:
+                mtime = datetime.fromtimestamp(file.stat().st_mtime)
+                if mtime != previous['modified_at']:
+                    index_file(conn, file_data)
+                    updated_files.append(file_data["file_path"])
+                    logging.info(f"[SYNC] Arquivo atualizado: {file}")
+        except Exception as e:
+            logging.warning(f"[SYNC] Erro ao processar {file}: {e}")
+
+    indexed_paths = {f.resolve().as_posix() for f in found_files if f.is_file()}
+    obsolete = [path for path in existing_files if path not in indexed_paths]
+    try:
+        for path in obsolete:
+            cur.execute("DELETE FROM endoflix_files WHERE file_path = %s", (path,))
+            logging.info(f"[SYNC] Arquivo removido do DB: {path}")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"[SYNC] Erro ao remover obsoletos: {e}")
+    finally:
+        cur.close()
+    return updated_files
+
+@app.route('/playlists', methods=['POST'])
+def create_or_update_playlist():
+    data = request.get_json()
+    name = data.get('name')
+    source_folder = data.get('source_folder')
+
+    if not name or not isinstance(name, str) or name.strip() == '':
+        return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
+    if not source_folder:
+        return jsonify({'success': False, 'error': 'Pasta de origem é obrigatória'}), 400
+
+    conn = DB_POOL.getconn()
+    try:
+        folder_path = Path(source_folder).resolve(strict=True)
+        if not folder_path.is_dir():
+            raise ValueError("Não é um diretório")
+    except Exception as e:
+        logging.error(f"[PLAYLIST] Caminho inválido: {source_folder} - {e}")
+        return jsonify({'success': False, 'error': f'Caminho inválido: {e}'}), 400
+
+    try:
+        updated_files = sync_directory_with_db(folder_path, conn)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO endoflix_playlist (name, files, play_count, source_folder) VALUES (%s, %s, 0, %s) "
+            "ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files, source_folder = EXCLUDED.source_folder",
+            (name.strip(), updated_files, str(folder_path))
+        )
+        conn.commit()
+        logging.info(f"[PLAYLIST] Playlist '{name}' atualizada com {len(updated_files)} arquivos.")
+        return jsonify({'success': True, 'files': updated_files})
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"[PLAYLIST] Erro ao criar playlist '{name}': {e}")
+        return jsonify({'success': False, 'error': str(e)})
+    finally:
+        DB_POOL.putconn(conn)
+
+def get_video_metadata(file):
+    file_path_str = str(file)
     if REDIS_CLIENT:
         try:
             cached = REDIS_CLIENT.get(f"metadata:{file_path_str}")
-            if cached:
+            if cached is not None:
                 try:
-                    # Handle both bytes and string cases
-                    if isinstance(cached, bytes):
+                    if isinstance(cached, (bytes, bytearray)):
                         return json.loads(cached.decode('utf-8'))
                     elif isinstance(cached, str):
                         return json.loads(cached)
-                    else:
-                        logging.error(f"Unexpected type for cached metadata: {type(cached)}")
-                        return None
-                except json.JSONDecodeError as e:
-                    logging.error(f"JSON decode error for cached metadata: {e}")
-                    return None
-        except redis.RedisError as e:
-            logging.error(f"Erro ao acessar Redis para {file_path_str}: {e}")
+                    logging.warning(f"Tipo desconhecido de cache do Redis para {file_path_str}: {type(cached)}")
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    logging.error(f"Erro ao decodificar cache do Redis para {file_path_str}: {e}")
 
-    conn = DB_POOL.getconn()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT video_codec, resolution, orientation, duration_seconds FROM endoflix_files WHERE file_path = %s", (file_path_str,))
-        result = cur.fetchone()
-        if result:
-            video_codec, resolution, orientation, duration_seconds = result
-            metadata = {
-                "video_codec": video_codec,
-                "resolution": resolution,
-                "orientation": orientation,
-                "duration_seconds": duration_seconds
-            }
-            if REDIS_CLIENT:
-                try:
-                    REDIS_CLIENT.setex(f"metadata:{file_path_str}", 86400, json.dumps(metadata))
-                except redis.RedisError as e:
-                    logging.error(f"Erro ao salvar no Redis para {file_path_str}: {e}")
-            return metadata
-        else:
-            # Return default metadata if not found in database
-            return {
-                "duration_seconds": 0,
-                "resolution": "unknown",
-                "orientation": "unknown",
-                "video_codec": "unknown"
-            }
-    except Exception as e:
-        logging.error(f"Erro ao consultar metadados no banco para {file_path_str}: {e}")
-    finally:
-        cur.close()
-        DB_POOL.putconn(conn)
+        except redis.RedisError as e:
+            logging.error(f"Erro ao ler do Redis para {file_path_str}: {e}")
 
     try:
         cmd = [FFPROBE_PATH, "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,duration", "-of", "json", file_path_str]
@@ -206,6 +225,7 @@ def get_video_metadata(file_path):
             "orientation": orientation,
             "video_codec": video_codec
         }
+        
         if REDIS_CLIENT:
             try:
                 REDIS_CLIENT.setex(f"metadata:{file_path_str}", 86400, json.dumps(result))
@@ -418,54 +438,31 @@ def about():
 def ultra():
     return render_template('ultra.html')
 
-@app.route('/scan', methods=['GET', 'POST', 'OPTIONS'])
+@app.route('/scan', methods=['GET', 'POST'])
 def scan():
-    try:
-        # Handle OPTIONS preflight requests
-        if request.method == 'OPTIONS':
-            response = make_response()
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-            response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-            return response
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'Dados JSON inválidos'}), 400
+            folder = data.get('folder')
+            if not folder:
+                return jsonify({'error': 'Parâmetro folder é obrigatório'}), 400
             
-        # First check if the method is allowed
-        if request.method not in ['GET', 'POST']:
-            return jsonify({'error': 'Método não permitido'}), 405
+            folder_path = Path(folder).resolve(strict=True)
+            if not folder_path.exists() or not folder_path.is_dir():
+                return jsonify({'error': 'Pasta inválida'}), 400
             
-        folder = None  # Initialize folder variable
-        # Get folder parameter based on request method
-        if request.method == 'POST':
-            if not request.json:
-                return jsonify({'error': 'Corpo da requisição JSON inválido'}), 400
-            folder = request.json.get('folder')
-        elif request.method == 'GET':
-            folder = request.args.get('folder')
+            # Retorna apenas um sucesso imediato
+            return jsonify({'success': True}), 200
+            
+        except Exception as e:
+            logging.error(f"[SCAN-POST] Erro ao validar pasta: {e}")
+            return jsonify({'error': f'Erro ao validar pasta: {e}'}), 500
 
-        if not folder:
-            return jsonify({'error': 'Parâmetro folder é obrigatório'}), 400
+    # Método GET simplificado ao máximo
+    return jsonify({'error': 'Método não suportado'}), 400
 
-        # Normalize and resolve path
-        folder_path = Path(folder).resolve()
-        
-        # Verify it's a valid subdirectory of some allowed root
-        # This is just an example - adjust according to your application's requirements
-        allowed_root = Path(tempfile.gettempdir()).resolve()
-        if not str(folder_path).startswith(str(allowed_root)):
-            # For unauthorized paths, check if they exist first
-            # We only return 403 if the path exists but is outside allowed root
-            if folder_path.exists():
-                return jsonify({'error': 'Acesso a pasta não permitido'}), 403
-            else:
-                return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
-
-        if not folder_path.exists() or not folder_path.is_dir():
-            return jsonify({'error': 'Pasta inválida ou não encontrada'}), 400
-
-        return Response(get_media_files(folder), mimetype='text/event-stream')
-    except Exception as e:
-        logging.error(f"Erro ao escanear pasta: {str(e)}")
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/playlists', methods=['GET', 'POST'])
 def playlists():
