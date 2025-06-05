@@ -1066,5 +1066,70 @@
         }
     </script>
     <script src="/static/keymap.js"></script>
+    <script>
+        let isScanning = false;
+        let currentFiles = [];
+
+        function showNotification(message, isError = false) {
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${isError ? 'danger' : 'success'} alert-dismissible fade show`;
+            alert.role = 'alert';
+            alert.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            document.body.appendChild(alert);
+            setTimeout(() => alert.remove(), 3000);
+        }
+
+        function loadFolder() {
+            if (isScanning) {
+                console.log('Scan already in progress');
+                return;
+            }
+            isScanning = true;
+            const folder = document.getElementById('folderPath').value;
+            if (!folder) {
+                showNotification('Caminho da pasta é obrigatório!', true);
+                isScanning = false;
+                return;
+            }
+
+            document.getElementById('loadingMessage').style.display = 'block';
+            document.getElementById('loadingMessage').textContent = 'Iniciando escaneamento...';
+
+            fetch('/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder: folder.replace(/\\/g, '\\\\') })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Scan response:', data);
+                document.getElementById('loadingMessage').style.display = 'none';
+                if (data.success) {
+                    currentFiles = data.files;
+                    showNotification('Pasta escaneada com sucesso!', false);
+                } else {
+                    showNotification(`Erro: ${data.error}`, true);
+                }
+                isScanning = false;
+            })
+            .catch(error => {
+                console.error('Scan error:', error);
+                document.getElementById('loadingMessage').style.display = 'none';
+                showNotification(`Erro ao escanear: ${error.message}`, true);
+                isScanning = false;
+            });
+        }
+
+        // Event listener for loadFolderBtn
+        document.getElementById('loadFolderBtn').addEventListener('click', loadFolder);
+    </script>
 </body>
 </html>

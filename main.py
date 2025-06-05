@@ -25,7 +25,8 @@ REDIS_SERVER_PATH = r"C:\\Program Files\\Redis\\redis-server.exe"
 REDIS_CLIENT = None
 REDIS_PROCESS = None
 
-HTML5_EXTENSIONS = {'.mp4', '.webm', '.ogg', '.ogv'}
+HTML5_EXTENSIONS = {'.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi', '.ogg', '.ogv'}
+HTML5_CODECS = {'h264', 'vp8', 'vp9'}
 
 DB_POOL = psycopg2.pool.SimpleConnectionPool(
     1, 20,
@@ -97,43 +98,49 @@ def calculate_hash(file_path):
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
-# Função auxiliar nova para sincronizar pastas com o DB
 def sync_directory_with_db(folder_path: Path, conn):
     existing_files = {}
     cur = conn.cursor()
     try:
         cur.execute("SELECT hash_id, file_path, modified_at FROM endoflix_files WHERE file_path LIKE %s", (str(folder_path) + '%',))
         for row in cur.fetchall():
-            existing_files[row[1]] = {'hash_id': row[0], 'modified_at': row[2]}
+            existing_files[Path(row[1]).resolve().as_posix()] = {'hash_id': row[0], 'modified_at': row[2]}
     except Exception as e:
         logging.error(f"[SYNC] Erro ao buscar arquivos existentes: {e}")
         return []
+    finally:
+        cur.close()
 
     found_files = list(folder_path.rglob('*'))
-    updated_files = []
+    all_files = []
+    with ThreadPoolExecutor() as executor:
+        future_to_file = {
+            executor.submit(process_file, file): file 
+            for file in found_files 
+            if file.is_file() and file.suffix.lower() in HTML5_EXTENSIONS
+            and Path(file).resolve().as_posix() not in existing_files  # Evita duplicatas
+        }
+        for future in as_completed(future_to_file):
+            file = future_to_file[future]
+            try:
+                file_data = future.result()
+                if file_data:
+                    all_files.append(file_data["file_path"])
+                    previous = existing_files.get(Path(file).resolve().as_posix())
+                    if not previous:
+                        index_file(conn, file_data)
+                        logging.info(f"[SYNC] Novo arquivo indexado: {file}")
+                    else:
+                        mtime = datetime.fromtimestamp(file.stat().st_mtime)
+                        if mtime != previous['modified_at']:
+                            index_file(conn, file_data)
+                            logging.info(f"[SYNC] Arquivo atualizado: {file}")
+            except Exception as e:
+                logging.warning(f"[SYNC] Erro ao processar {file}: {e}")
 
-    for file in found_files:
-        if not file.is_file() or file.suffix.lower() not in HTML5_EXTENSIONS:
-            continue
-        try:
-            hash_id = calculate_hash(file)
-            file_data = process_file(file)
-            previous = existing_files.get(str(file))
-            if not previous:
-                index_file(conn, file_data)
-                updated_files.append(file_data["file_path"])
-                logging.info(f"[SYNC] Novo arquivo indexado: {file}")
-            else:
-                mtime = datetime.fromtimestamp(file.stat().st_mtime)
-                if mtime != previous['modified_at']:
-                    index_file(conn, file_data)
-                    updated_files.append(file_data["file_path"])
-                    logging.info(f"[SYNC] Arquivo atualizado: {file}")
-        except Exception as e:
-            logging.warning(f"[SYNC] Erro ao processar {file}: {e}")
-
-    indexed_paths = {f.resolve().as_posix() for f in found_files if f.is_file()}
+    indexed_paths = {Path(f).resolve().as_posix() for f in found_files if f.is_file()}
     obsolete = [path for path in existing_files if path not in indexed_paths]
+    cur = conn.cursor()
     try:
         for path in obsolete:
             cur.execute("DELETE FROM endoflix_files WHERE file_path = %s", (path,))
@@ -144,7 +151,7 @@ def sync_directory_with_db(folder_path: Path, conn):
         logging.error(f"[SYNC] Erro ao remover obsoletos: {e}")
     finally:
         cur.close()
-    return updated_files
+    return all_files
 
 @app.route('/playlists', methods=['POST'])
 def create_or_update_playlist():
@@ -167,21 +174,22 @@ def create_or_update_playlist():
         return jsonify({'success': False, 'error': f'Caminho inválido: {e}'}), 400
 
     try:
-        updated_files = sync_directory_with_db(folder_path, conn)
+        all_files = sync_directory_with_db(folder_path, conn)
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO endoflix_playlist (name, files, play_count, source_folder) VALUES (%s, %s, 0, %s) "
             "ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files, source_folder = EXCLUDED.source_folder",
-            (name.strip(), updated_files, str(folder_path))
+            (name.strip(), all_files, str(folder_path))
         )
         conn.commit()
-        logging.info(f"[PLAYLIST] Playlist '{name}' atualizada com {len(updated_files)} arquivos.")
-        return jsonify({'success': True, 'files': updated_files})
+        logging.info(f"[PLAYLIST] Playlist '{name}' atualizada com {len(all_files)} arquivos.")
+        return jsonify({'success': True, 'files': all_files})
     except Exception as e:
         conn.rollback()
         logging.error(f"[PLAYLIST] Erro ao criar playlist '{name}': {e}")
         return jsonify({'success': False, 'error': str(e)})
     finally:
+        cur.close()
         DB_POOL.putconn(conn)
 
 def get_video_metadata(file):
@@ -198,7 +206,6 @@ def get_video_metadata(file):
                     logging.warning(f"Tipo desconhecido de cache do Redis para {file_path_str}: {type(cached)}")
                 except (json.JSONDecodeError, UnicodeDecodeError) as e:
                     logging.error(f"Erro ao decodificar cache do Redis para {file_path_str}: {e}")
-
         except redis.RedisError as e:
             logging.error(f"Erro ao ler do Redis para {file_path_str}: {e}")
 
@@ -212,12 +219,15 @@ def get_video_metadata(file):
         streams = metadata.get("streams", [])
         video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
         
+        video_codec = video_stream.get("codec_name", "unknown")
+        if video_codec not in HTML5_CODECS:
+            return None  # Ignora arquivos com codecs não suportados
+        
         duration = float(video_stream.get("duration", 0))
         width = video_stream.get("width", 0)
         height = video_stream.get("height", 0)
         resolution = f"{width}x{height}" if width and height else "unknown"
         orientation = "portrait" if width < height else "landscape" if width > height else "square"
-        video_codec = video_stream.get("codec_name", "unknown")
         
         result = {
             "duration_seconds": duration,
@@ -234,12 +244,7 @@ def get_video_metadata(file):
         return result
     except Exception as e:
         logging.error(f"Erro ao extrair metadados de {file_path_str}: {e}")
-        return {
-            "duration_seconds": 0,
-            "resolution": "unknown",
-            "orientation": "unknown",
-            "video_codec": "unknown"
-        }
+        return None
 
 def process_file(file):
     file_path_str = str(file)
@@ -247,14 +252,8 @@ def process_file(file):
     hash_id = calculate_hash(file)
     metadata = get_video_metadata(file)
     
-    # Ensure metadata is a dictionary
-    if not isinstance(metadata, dict):
-        metadata = {
-            "duration_seconds": 0,
-            "resolution": "unknown",
-            "orientation": "unknown",
-            "video_codec": "unknown"
-        }
+    if not metadata:  # Ignora se metadados inválidos (codec não suportado)
+        return None
     
     return {
         "hash_id": hash_id,
@@ -273,7 +272,7 @@ def process_file(file):
 
 def check_existing_hash(conn, hash_id, file_path):
     cur = conn.cursor()
-    file_path_str = str(file_path)  # Define file_path_str before try block
+    file_path_str = str(file_path)
     try:
         cur.execute("SELECT file_path FROM endoflix_files WHERE hash_id = %s", (hash_id,))
         result = cur.fetchone()
@@ -288,13 +287,14 @@ def check_existing_hash(conn, hash_id, file_path):
             return True
         return False
     except Exception as e:
-        logging.error(f"Erro ao verificar hash de {file_path_str if 'file_path_str' in locals() else 'unknown'}: {e}")
+        logging.error(f"Erro ao verificar hash de {file_path_str}: {e}")
         return False
     finally:
         cur.close()
 
-## Only for testing
 def index_file(conn, file_data):
+    if not file_data:  # Ignora se file_data é None
+        return
     cur = conn.cursor()
     try:
         cur.execute("""
@@ -339,43 +339,34 @@ def get_media_files(folder):
         if not folder_path.exists() or not folder_path.is_dir():
             yield json.dumps([])
             return
-            
-        files_to_process = [file for file in folder_path.rglob('*') if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi']]
         
-        # Sort files by name
+        files_to_process = [file for file in folder_path.rglob('*') if file.is_file() and file.suffix.lower() in HTML5_EXTENSIONS]
         files_to_process.sort(key=lambda x: x.name.lower())
         
-        # Stream as a JSON array
         yield '['
-        
         for i, file_path in enumerate(files_to_process):
             try:
-                # Get file stats
+                metadata = get_video_metadata(file_path)
+                if not metadata:  # Ignora arquivos com codecs não suportados
+                    continue
                 stat = file_path.stat()
-                
-                # Create file info dictionary
                 file_info = {
                     'filename': file_path.name,
                     'size': stat.st_size,
                     'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    'type': 'video'
+                    'type': 'video',
+                    'resolution': metadata.get('resolution', 'unknown'),
+                    'codec': metadata.get('video_codec', 'unknown')
                 }
-                
-                # Convert to JSON string
                 json_str = json.dumps(file_info, ensure_ascii=False)
-                
-                # Add comma between items
                 if i > 0:
                     yield f',{json_str}'
                 else:
                     yield json_str
-                
             except Exception as e:
                 logging.error(f"Erro ao processar arquivo {file_path}: {str(e)}")
                 continue
-                
         yield ']'
-        
     except Exception as e:
         logging.error(f"Erro ao obter arquivos de mídia: {str(e)}")
         yield json.dumps([])
@@ -404,7 +395,7 @@ def serve_video_range(input_path):
     try:
         cur.execute("SELECT 1 FROM endoflix_files WHERE file_path = %s", (input_path_str,))
         if not cur.fetchone():
-            file_data = process_file(input_path_str)
+            file_data = process_file(input_path)
             index_file(conn, file_data)
         cur.execute("UPDATE endoflix_files SET view_count = view_count + 1, last_viewed_at = CURRENT_TIMESTAMP WHERE file_path = %s", (input_path_str,))
         conn.commit()
@@ -440,29 +431,32 @@ def ultra():
 
 @app.route('/scan', methods=['GET', 'POST'])
 def scan():
-    if request.method == 'POST':
-        try:
+    try:
+        # Get folder path from query parameter (GET) or JSON body (POST)
+        if request.method == 'GET':
+            folder = request.args.get('folder')
+        else:  # POST
             data = request.get_json()
             if not data:
                 return jsonify({'error': 'Dados JSON inválidos'}), 400
             folder = data.get('folder')
-            if not folder:
-                return jsonify({'error': 'Parâmetro folder é obrigatório'}), 400
-            
-            folder_path = Path(folder).resolve(strict=True)
-            if not folder_path.exists() or not folder_path.is_dir():
-                return jsonify({'error': 'Pasta inválida'}), 400
-            
-            # Retorna apenas um sucesso imediato
-            return jsonify({'success': True}), 200
-            
-        except Exception as e:
-            logging.error(f"[SCAN-POST] Erro ao validar pasta: {e}")
-            return jsonify({'error': f'Erro ao validar pasta: {e}'}), 500
 
-    # Método GET simplificado ao máximo
-    return jsonify({'error': 'Método não suportado'}), 400
-
+        if not folder:
+            return jsonify({'error': 'Parâmetro folder é obrigatório'}), 400
+        
+        folder_path = Path(folder).resolve(strict=True)
+        if not folder_path.exists() or not folder_path.is_dir():
+            return jsonify({'error': 'Pasta inválida'}), 400
+        
+        conn = DB_POOL.getconn()
+        try:
+            files = sync_directory_with_db(folder_path, conn)
+            return jsonify({'success': True, 'files': files})
+        finally:
+            DB_POOL.putconn(conn)
+    except Exception as e:
+        logging.error(f"[SCAN] Erro ao escanear pasta {folder}: {e}")
+        return jsonify({'error': f'Erro ao escanear pasta: {e}'}), 500
 
 @app.route('/playlists', methods=['GET', 'POST'])
 def playlists():
@@ -530,31 +524,17 @@ def update_playlist():
         if not name or not isinstance(name, str) or name.strip() == '':
             return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
         
-        cur.execute("SELECT files, source_folder FROM endoflix_playlist WHERE name = %s", (name.strip(),))
+        cur.execute("SELECT source_folder FROM endoflix_playlist WHERE name = %s", (name.strip(),))
         result = cur.fetchone()
         if not result:
             return jsonify({'success': False, 'error': 'Playlist não encontrada'}), 404
         
-        current_files, source_folder = result
+        source_folder = result[0]
         if not source_folder or not Path(source_folder).exists():
             return jsonify({'success': False, 'error': 'Pasta de origem inválida ou não especificada'}), 400
 
         folder_path = Path(source_folder)
-        current_files_set = set(current_files)
-        new_files_set = set(str(file) for file in folder_path.rglob('*') if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi'])
-
-        files_to_keep = current_files_set & new_files_set
-        files_to_add = new_files_set - current_files_set
-
-        updated_files = list(files_to_keep | files_to_add)
-
-        for file in files_to_add:
-            hash_id = calculate_hash(file)
-            conn_inner = DB_POOL.getconn()
-            if not check_existing_hash(conn_inner, hash_id, file):
-                file_data = process_file(file)
-                index_file(conn_inner, file_data)
-            DB_POOL.putconn(conn_inner)
+        updated_files = sync_directory_with_db(folder_path, conn)
 
         cur.execute(
             "UPDATE endoflix_playlist SET files = %s WHERE name = %s",
@@ -730,18 +710,17 @@ def analytics():
     except Exception as e:
         logging.error(f"Erro ao obter análises: {e}")
         return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        DB_POOL.putconn(conn)
 
 @app.route('/video/<path:filename>')
 def serve_video(filename):
-    # Decode URL-encoded characters in the path
     try:
-        # If filename is bytes, decode it to string
         if isinstance(filename, bytes):
             file_path = filename.decode('utf-8')
         else:
             file_path = filename
-        
-        # Use Path to handle the path normalization
         return serve_video_range(Path(file_path))
     except Exception as e:
         logging.error(f"Erro ao processar caminho do vídeo: {e}")
@@ -750,18 +729,13 @@ def serve_video(filename):
 if __name__ == '__main__':
     logging.info("Iniciando o EndoFlix...")
     try:
-        # Initialize Redis
         init_redis()
-        
-        # Verify database connection
         conn = DB_POOL.getconn()
         if conn:
             logging.info("Conexão com o banco de dados PostgreSQL estabelecida")
             DB_POOL.putconn(conn)
         else:
             logging.error("Falha ao obter conexão do pool de conexões")
-        
-        # Start the application
         app.run(debug=True, threaded=True)
     except Exception as e:
         logging.error(f"Erro fatal ao iniciar o aplicativo: {e}", exc_info=True)
