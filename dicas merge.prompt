@@ -1,0 +1,37 @@
+1. Sim, você pode desfazer um merge depois
+Se você ainda não deu o merge, não há risco. Mas mesmo que já tenha dado merge e feito push, você pode:
+
+➤ Voltar para o commit anterior com:
+git log --oneline
+# encontre o hash do commit anterior ao merge
+
+git checkout main
+git reset --hard <commit-anterior>
+git push origin main --force  # ⚠️ CUIDADO: força o histórico remoto
+Esse comando reescreve o histórico. Só faça isso se tiver certeza e for o único trabalhando na branch.
+
+✅ 2. Se o merge foi local e ainda não deu push:
+Você pode simplesmente:
+
+git reset --hard HEAD~1
+Isso desfaz o último commit (inclusive merge).
+
+✅ 3. Se já fez push, e quer desfazer de forma segura:
+Você pode criar um revert merge commit:
+
+git revert -m 1 <hash-do-merge>
+O -m 1 diz que você quer manter o lado da main como base.
+
+Isso cria um novo commit que desfaz o efeito do merge, sem reescrever histórico.
+
+💡 Dica de ouro antes do merge:
+Antes de fazer o merge, crie uma tag ou branch de segurança:
+
+git checkout main
+git checkout -b backup-pre-merge
+Aí você pode fazer o merge sem medo. Se der ruim:
+
+git checkout main
+git reset --hard backup-pre-merge
+
+Se quiser, me diga o nome das branches e o estado atual (git log --oneline --graph --all) que eu te oriento exatamente.
