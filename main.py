@@ -191,43 +191,20 @@ def check_existing_hash(conn, hash_id, file_path):
     cur = conn.cursor()
     try:
         file_path_str = str(file_path)
-        cur.execute("SELECT file_path FROM endoflix_files WHERE hash_id = %s", (hash_id,))
+        cur.execute("SELECT file_path FROM endoflix_files WHERE hash_id = %s AND file_path = %s", (hash_id, file_path_str))
         result = cur.fetchone()
-        if result:
-            existing_path = result[0]
-            if existing_path != file_path_str:
-                cur.execute(
-                    "UPDATE endoflix_files SET file_path = %s, modified_at = %s WHERE hash_id = %s",
-                    (file_path_str, datetime.fromtimestamp(os.stat(file_path).st_mtime), hash_id)
-                )
-                conn.commit()
-            return True
-        return False
+        return bool(result)  # Retorna True se o arquivo já existe com o mesmo hash_id e file_path
     except Exception as e:
         logging.error(f"Erro ao verificar hash de {file_path_str}: {e}")
         return False
     finally:
         cur.close()
-
-## Only for testing
 def index_file(conn, file_data):
     cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO endoflix_files (hash_id, file_path, size_bytes, created_at, modified_at, video_codec, resolution, orientation, duration_seconds, view_count, last_viewed_at, is_favorite)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (hash_id) DO UPDATE
-            SET file_path = EXCLUDED.file_path,
-                size_bytes = EXCLUDED.size_bytes,
-                created_at = EXCLUDED.created_at,
-                modified_at = EXCLUDED.modified_at,
-                video_codec = EXCLUDED.video_codec,
-                resolution = EXCLUDED.resolution,
-                orientation = EXCLUDED.orientation,
-                duration_seconds = EXCLUDED.duration_seconds,
-                view_count = EXCLUDED.view_count,
-                last_viewed_at = EXCLUDED.last_viewed_at,
-                is_favorite = EXCLUDED.is_favorite
+            INSERT INTO endoflix_files (id, hash_id, file_path, size_bytes, created_at, modified_at, video_codec, resolution, orientation, duration_seconds, view_count, last_viewed_at, is_favorite)
+            VALUES (DEFAULT, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             file_data["hash_id"],
             file_data["file_path"],
@@ -260,36 +237,36 @@ def get_media_files(folder):
         yield f"data: {json.dumps({'status': 'end', 'total': 0, 'message': 'Nenhum arquivo de mídia encontrado'})}\n\n"
         return
 
+    yield f"data: {json.dumps({'status': 'start', 'total': len(files_to_process)})}\n\n"
     conn = DB_POOL.getconn()
-    files_to_index = []
-    for file in files_to_process:
-        hash_id = calculate_hash(file)
-        if not check_existing_hash(conn, hash_id, file):
-            files_to_index.append(file)
-        else:
-            yield f"data: {json.dumps({'status': 'skipped', 'file': {'path': str(file), 'duration': 0}, 'message': 'Arquivo já indexado ou atualizado'})}\n\n"
-
-    DB_POOL.putconn(conn)
-    if not files_to_index:
-        yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_process), 'message': 'Nenhum novo arquivo para indexar'})}\n\n"
-        return
-
-    yield f"data: {json.dumps({'status': 'start', 'total': len(files_to_index)})}\n\n"
     with ProcessPoolExecutor(max_workers=8) as executor:
-        future_to_file = {executor.submit(process_file, file): file for file in files_to_index}
+        future_to_file = {executor.submit(process_file, file): file for file in files_to_process}
         for i, future in enumerate(as_completed(future_to_file), 1):
             file = future_to_file[future]
             try:
                 file_data = future.result()
                 media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
-                conn = DB_POOL.getconn()
-                index_file(conn, file_data)
-                DB_POOL.putconn(conn)
-                yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': len(files_to_index)})}\n\n"
+                # Verifica se o arquivo já existe no DB
+                if not check_existing_hash(conn, file_data["hash_id"], file):
+                    index_file(conn, file_data)  # Insere novo arquivo
+                else:
+                    # Atualiza apenas se o caminho mudou
+                    cur = conn.cursor()
+                    cur.execute("SELECT file_path FROM endoflix_files WHERE hash_id = %s", (file_data["hash_id"],))
+                    existing_path = cur.fetchone()[0]
+                    if existing_path != str(file):
+                        cur.execute(
+                            "UPDATE endoflix_files SET file_path = %s, modified_at = %s WHERE hash_id = %s",
+                            (str(file), datetime.fromtimestamp(os.stat(file).st_mtime), file_data["hash_id"])
+                        )
+                        conn.commit()
+                    cur.close()
+                yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': len(files_to_process)})}\n\n"
             except Exception as e:
                 logging.error(f"Erro ao processar {file}: {e}")
                 yield f"data: {json.dumps({'status': 'error', 'file': str(file), 'message': str(e)})}\n\n"
-    yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_index)})}\n\n"
+    DB_POOL.putconn(conn)
+    yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_process)})}\n\n"
 
 def serve_video_range(input_path):
     input_path_str = str(input_path)
@@ -680,11 +657,9 @@ def save_snapshot_worker(snapshot_queue):
         except Exception as e:
             logging.error(f"Erro no worker de snapshot: {str(e)}")
             snapshot_queue.task_done()
-
-# Inicializa o pool de workers para snapshots
 snapshot_queue = Queue()
 snapshot_workers = []
-for _ in range(6):  # Aumentado para 6 workers em paralelo
+for _ in range(6):
     worker = threading.Thread(target=save_snapshot_worker, args=(snapshot_queue,))
     worker.daemon = True
     worker.start()
