@@ -87,8 +87,7 @@ def signal_handler(sig, frame):
     shutdown_redis()
     DB_POOL.closeall()
     sys.exit(0)
-
-signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
 def calculate_hash(file_path):
     sha256_hash = hashlib.sha256()
@@ -191,14 +190,39 @@ def check_existing_hash(conn, hash_id, file_path):
     cur = conn.cursor()
     try:
         file_path_str = str(file_path)
-        cur.execute("SELECT file_path FROM endoflix_files WHERE hash_id = %s AND file_path = %s", (hash_id, file_path_str))
+        filename = os.path.basename(file_path_str)
+        stats = os.stat(file_path)
+        size_bytes = stats.st_size
+        # Verifica se existe na mesma pasta com mesmo nome e tamanho
+        cur.execute(
+            "SELECT file_path FROM endoflix_files WHERE file_path = %s AND size_bytes = %s",
+            (file_path_str, size_bytes)
+        )
+        if cur.fetchone():
+            return True  # Arquivo idêntico na mesma pasta, pular reindexação
+        # Verifica se o hash existe em outra pasta (arquivo movido)
+        cur.execute(
+            "SELECT file_path FROM endoflix_files WHERE hash_id = %s",
+            (hash_id,)
+        )
         result = cur.fetchone()
-        return bool(result)  # Retorna True se o arquivo já existe com o mesmo hash_id e file_path
+        if result:
+            existing_path = result[0]
+            if existing_path != file_path_str:
+                # Atualiza caminho para arquivo movido
+                cur.execute(
+                    "UPDATE endoflix_files SET file_path = %s, modified_at = %s WHERE hash_id = %s",
+                    (file_path_str, datetime.fromtimestamp(stats.st_mtime), hash_id)
+                )
+                conn.commit()
+            return True
+        return False  # Arquivo novo
     except Exception as e:
         logging.error(f"Erro ao verificar hash de {file_path_str}: {e}")
         return False
     finally:
         cur.close()
+
 def index_file(conn, file_data):
     cur = conn.cursor()
     try:
@@ -237,36 +261,118 @@ def get_media_files(folder):
         yield f"data: {json.dumps({'status': 'end', 'total': 0, 'message': 'Nenhum arquivo de mídia encontrado'})}\n\n"
         return
 
-    yield f"data: {json.dumps({'status': 'start', 'total': len(files_to_process)})}\n\n"
     conn = DB_POOL.getconn()
-    with ProcessPoolExecutor(max_workers=8) as executor:
-        future_to_file = {executor.submit(process_file, file): file for file in files_to_process}
-        for i, future in enumerate(as_completed(future_to_file), 1):
-            file = future_to_file[future]
-            try:
-                file_data = future.result()
+    cur = conn.cursor()
+    # Obter arquivos atualmente indexados para a pasta
+    cur.execute("SELECT file_path FROM endoflix_files WHERE file_path LIKE %s", (f"{str(folder_path)}%",))
+    db_files = {row[0] for row in cur.fetchall()}
+    cur.close()
+
+    current_files = {str(file) for file in files_to_process}
+    # Arquivos para remover do DB (não estão mais na pasta)
+    files_to_remove = db_files - current_files
+    if files_to_remove:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM endoflix_files WHERE file_path IN %s", (tuple(files_to_remove),))
+        conn.commit()
+        cur.close()
+
+    # Criar playlist temporária
+    temp_playlist_name = f"temp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO endoflix_playlist (name, files, play_count, source_folder, is_temp) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (name) DO NOTHING",
+        (temp_playlist_name, [], 0, str(folder_path), True)
+    )
+    conn.commit()
+    cur.close()
+
+    yield f"data: {json.dumps({'status': 'start', 'total': len(files_to_process), 'temp_playlist': temp_playlist_name})}\n\n"
+    for i, file in enumerate(files_to_process, 1):
+        try:
+            hash_id = calculate_hash(file)
+            stats = os.stat(file)
+            media_item = None
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT file_path, duration_seconds, size_bytes, created_at, modified_at, video_codec, resolution, orientation, view_count, last_viewed_at, is_favorite FROM endoflix_files WHERE file_path = %s AND size_bytes = %s",
+                (str(file), stats.st_size)
+            )
+            result = cur.fetchone()
+            cur.close()
+            if result:
+                # Arquivo já indexado, usar dados do DB
+                file_data = {
+                    "hash_id": hash_id,
+                    "file_path": result[0],
+                    "duration_seconds": result[1],
+                    "size_bytes": result[2],
+                    "created_at": result[3],
+                    "modified_at": result[4],
+                    "video_codec": result[5],
+                    "resolution": result[6],
+                    "orientation": result[7],
+                    "view_count": result[8],
+                    "last_viewed_at": result[9],
+                    "is_favorite": result[10]
+                }
                 media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
-                # Verifica se o arquivo já existe no DB
-                if not check_existing_hash(conn, file_data["hash_id"], file):
-                    index_file(conn, file_data)  # Insere novo arquivo
-                else:
-                    # Atualiza apenas se o caminho mudou
-                    cur = conn.cursor()
-                    cur.execute("SELECT file_path FROM endoflix_files WHERE hash_id = %s", (file_data["hash_id"],))
-                    existing_path = cur.fetchone()[0]
-                    if existing_path != str(file):
-                        cur.execute(
-                            "UPDATE endoflix_files SET file_path = %s, modified_at = %s WHERE hash_id = %s",
-                            (str(file), datetime.fromtimestamp(os.stat(file).st_mtime), file_data["hash_id"])
-                        )
-                        conn.commit()
-                    cur.close()
-                yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': len(files_to_process)})}\n\n"
-            except Exception as e:
-                logging.error(f"Erro ao processar {file}: {e}")
-                yield f"data: {json.dumps({'status': 'error', 'file': str(file), 'message': str(e)})}\n\n"
+                yield f"data: {json.dumps({'status': 'skipped', 'file': media_item, 'progress': i, 'total': len(files_to_process), 'message': 'Arquivo já indexado'})}\n\n"
+            else:
+                # Verificar se é um arquivo movido (mesmo hash, outro caminho)
+                cur = conn.cursor()
+                cur.execute("SELECT file_path FROM endoflix_files WHERE hash_id = %s", (hash_id,))
+                existing = cur.fetchone()
+                if existing and existing[0] != str(file):
+                    cur.execute(
+                        "UPDATE endoflix_files SET file_path = %s, modified_at = %s WHERE hash_id = %s",
+                        (str(file), datetime.fromtimestamp(stats.st_mtime), hash_id)
+                    )
+                    conn.commit()
+                    cur.execute(
+                        "SELECT file_path, duration_seconds, size_bytes, created_at, modified_at, video_codec, resolution, orientation, view_count, last_viewed_at, is_favorite FROM endoflix_files WHERE file_path = %s",
+                        (str(file),)
+                    )
+                    result = cur.fetchone()
+                    if result:
+                        file_data = {
+                            "hash_id": hash_id,
+                            "file_path": result[0],
+                            "duration_seconds": result[1],
+                            "size_bytes": result[2],
+                            "created_at": result[3],
+                            "modified_at": result[4],
+                            "video_codec": result[5],
+                            "resolution": result[6],
+                            "orientation": result[7],
+                            "view_count": result[8],
+                            "last_viewed_at": result[9],
+                            "is_favorite": result[10]
+                        }
+                        media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
+                        yield f"data: {json.dumps({'status': 'skipped', 'file': media_item, 'progress': i, 'total': len(files_to_process), 'message': 'Arquivo movido e atualizado'})}\n\n"
+                cur.close()
+                if not media_item:
+                    # Arquivo novo, processar
+                    with ProcessPoolExecutor(max_workers=8) as executor:
+                        future = executor.submit(process_file, file)
+                        file_data = future.result()
+                        media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
+                        index_file(conn, file_data)
+                        yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': len(files_to_process)})}\n\n"
+            # Adicionar arquivo à playlist temporária
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE endoflix_playlist SET files = array_append(files, %s) WHERE name = %s",
+                (str(file), temp_playlist_name)
+            )
+            conn.commit()
+            cur.close()
+        except Exception as e:
+            logging.error(f"Erro ao processar {file}: {e}")
+            yield f"data: {json.dumps({'status': 'error', 'file': str(file), 'message': str(e)})}\n\n"
     DB_POOL.putconn(conn)
-    yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_process)})}\n\n"
+    yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_process), 'temp_playlist': temp_playlist_name})}\n\n"
 
 def serve_video_range(input_path):
     input_path_str = str(input_path)
@@ -346,7 +452,7 @@ def playlists():
     cur = conn.cursor()
     try:
         if request.method == 'GET':
-            cur.execute("SELECT name, files, play_count, source_folder FROM endoflix_playlist")
+            cur.execute("SELECT name, files, play_count, source_folder FROM endoflix_playlist WHERE is_temp = FALSE")
             playlists = {row[0]: {"files": row[1], "play_count": row[2], "source_folder": row[3]} for row in cur.fetchall()}
             return jsonify(playlists)
         else:
@@ -369,6 +475,40 @@ def playlists():
     except Exception as e:
         conn.rollback()
         logging.error(f"Erro ao gerenciar playlist: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        cur.close()
+        DB_POOL.putconn(conn)
+
+@app.route('/save_temp_playlist', methods=['POST'])
+def save_temp_playlist():
+    conn = DB_POOL.getconn()
+    cur = conn.cursor()
+    try:
+        data = request.get_json()
+        temp_name = data.get('temp_name')
+        new_name = data.get('new_name')
+        if not temp_name or not new_name or not isinstance(new_name, str) or new_name.strip() == '':
+            return jsonify({'success': False, 'error': 'Nomes de playlist inválidos'}), 400
+        
+        cur.execute("SELECT files, source_folder FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_name,))
+        result = cur.fetchone()
+        if not result:
+            return jsonify({'success': False, 'error': 'Playlist temporária não encontrada'}), 404
+        
+        files, source_folder = result
+        cur.execute(
+            "INSERT INTO endoflix_playlist (name, files, play_count, source_folder, is_temp) VALUES (%s, %s, %s, %s, %s)",
+            (new_name.strip(), files, 0, source_folder, False)
+        )
+        # Opcional: remover playlist temporária após salvar
+        cur.execute("DELETE FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_name,))
+        conn.commit()
+        logging.info(f"Playlist {new_name} salva a partir de {temp_name}")
+        return jsonify({'success': True, 'name': new_name, 'files': files})
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Erro ao salvar playlist: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         cur.close()
@@ -403,28 +543,52 @@ def update_playlist():
     try:
         data = request.get_json()
         name = data.get('name')
+        source_folder = data.get('source_folder')
+        temp_playlist = data.get('temp_playlist')  # Nome da playlist temporária, se fornecida
         if not name or not isinstance(name, str) or name.strip() == '':
             return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
-        
-        cur.execute("SELECT files, source_folder FROM endoflix_playlist WHERE name = %s", (name.strip(),))
-        result = cur.fetchone()
-        if not result:
-            return jsonify({'success': False, 'error': 'Playlist não encontrada'}), 404
-        
-        current_files, source_folder = result
-        if not source_folder or not Path(source_folder).exists():
+        if not source_folder or not isinstance(source_folder, str) or not Path(source_folder).exists():
             return jsonify({'success': False, 'error': 'Pasta de origem inválida ou não especificada'}), 400
 
+        name = name.strip()
         folder_path = Path(source_folder)
-        current_files_set = set(current_files)
         new_files_set = set(str(file) for file in folder_path.rglob('*') if file.is_file() and file.suffix.lower() in ['.mp4', '.mkv', '.mov', '.divx', '.webm', '.mpg', '.avi'])
 
-        files_to_keep = current_files_set & new_files_set
-        files_to_add = new_files_set - current_files_set
+        # Verificar se a playlist existe
+        cur.execute("SELECT files, source_folder FROM endoflix_playlist WHERE name = %s", (name,))
+        result = cur.fetchone()
+        
+        if not result and temp_playlist:
+            # Usar arquivos da playlist temporária, se fornecida
+            cur.execute("SELECT files FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_playlist,))
+            temp_result = cur.fetchone()
+            if temp_result:
+                new_files_set = set(temp_result[0])
+            else:
+                logging.warning(f"Playlist temporária {temp_playlist} não encontrada")
 
-        updated_files = list(files_to_keep | files_to_add)
+        if not result:
+            # Criar nova playlist se não existir
+            cur.execute(
+                "INSERT INTO endoflix_playlist (name, files, play_count, source_folder, is_temp) VALUES (%s, %s, %s, %s, %s)",
+                (name, list(new_files_set), 0, source_folder, False)
+            )
+            conn.commit()
+            logging.info(f"Playlist {name} criada com arquivos: {new_files_set}")
+        else:
+            current_files, _ = result
+            current_files_set = set(current_files)
+            files_to_keep = current_files_set & new_files_set
+            files_to_add = new_files_set - current_files_set
+            updated_files = list(files_to_keep | files_to_add)
+            cur.execute(
+                "UPDATE endoflix_playlist SET files = %s, source_folder = %s WHERE name = %s",
+                (updated_files, source_folder, name)
+            )
+            conn.commit()
+            logging.info(f"Playlist {name} atualizada com arquivos: {updated_files}")
 
-        for file in files_to_add:
+        for file in new_files_set:
             hash_id = calculate_hash(file)
             conn_inner = DB_POOL.getconn()
             if not check_existing_hash(conn_inner, hash_id, file):
@@ -432,12 +596,7 @@ def update_playlist():
                 index_file(conn_inner, file_data)
             DB_POOL.putconn(conn_inner)
 
-        cur.execute(
-            "UPDATE endoflix_playlist SET files = %s WHERE name = %s",
-            (updated_files, name.strip())
-        )
-        conn.commit()
-        return jsonify({'success': True, 'files': updated_files})
+        return jsonify({'success': True, 'files': list(new_files_set)})
     except Exception as e:
         conn.rollback()
         logging.error(f"Erro ao atualizar playlist: {str(e)}")

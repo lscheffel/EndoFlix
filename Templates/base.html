@@ -223,6 +223,7 @@
         const playlistFrame = document.getElementById('playlistFrame');
         const divider = document.getElementById('divider');
         const videoContainers = document.querySelectorAll('.video-container');
+        let tempPlaylistName = null;
         let isPlaylistVisible = true;
         let currentFiles = [];
         let playedVideos = new Set();
@@ -301,114 +302,130 @@
         });
 
         async function scanFolder() {
-            const folder = document.getElementById('folderInput').value.trim();
-            if (!folder) return showNotification('Digite o caminho da pasta!', true);
-            const spinner = document.getElementById('loadingSpinner');
-            const spinnerText = document.getElementById('spinnerText');
-            const fileList = document.getElementById('fileList');
-            spinner.style.display = 'block';
-            spinnerText.style.display = 'block';
-            spinnerText.textContent = 'Iniciando escaneamento...';
-            currentFiles = [];
-            fileList.innerHTML = '';
+    const folder = document.getElementById('folderInput').value.trim();
+    if (!folder) return showNotification('Digite o caminho da pasta!', true);
+    const spinner = document.getElementById('loadingSpinner');
+    const spinnerText = document.getElementById('spinnerText');
+    const fileList = document.getElementById('fileList');
+    spinner.style.display = 'block';
+    spinnerText.style.display = 'block';
+    spinnerText.textContent = 'Iniciando escaneamento...';
+    currentFiles = [];
+    fileList.innerHTML = '';
+    let tempPlaylistName = null;
 
-            try {
-                const response = await fetch('/scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ folder })
-                });
+    try {
+        const response = await fetch('/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder })
+        });
 
-                if (!response.ok) {
-                    throw new Error('Erro ao iniciar escaneamento');
-                }
+        if (!response.ok) {
+            throw new Error('Erro ao iniciar escaneamento');
+        }
 
-                const eventSource = new EventSource(`/scan?folder=${encodeURIComponent(folder)}`);
-                let connectionRetries = 0;
-                const maxRetries = 3;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
 
-                eventSource.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    if (data.status === 'start') {
-                        spinnerText.textContent = `Processando 0/${data.total} arquivos`;
-                    } else if (data.status === 'update' || data.status === 'skipped') {
-                        if (data.status === 'update') currentFiles.push(data.file);
-                        updateFileList(currentFiles);
-                        if (data.progress && data.total) {
-                            spinnerText.textContent = `Processando ${data.progress}/${data.total} arquivos`;
-                        }
-                        connectionRetries = 0;
-                    } else if (data.status === 'error') {
-                        showNotification(`Erro: ${data.message || data.file}`, true);
-                    } else if (data.status === 'end') {
-                        spinner.style.display = 'none';
-                        spinnerText.style.display = 'none';
-                        eventSource.close();
-                        playedVideos.clear();
-                        document.getElementById('playlistSelect').value = '';
-                        showNotification(`Escaneamento concluído: ${currentFiles.length} arquivos novos`, false);
-                        if (currentFiles.length > 0) saveTempPlaylist(folder);
-                    }
-                };
-
-                eventSource.onerror = () => {
-                    connectionRetries++;
-                    if (connectionRetries >= maxRetries) {
-                        spinner.style.display = 'none';
-                        spinnerText.style.display = 'none';
-                        eventSource.close();
-                        showNotification('Erro de conexão persistente', true);
-                        if (currentFiles.length > 0) {
-                            updateFileList(currentFiles);
-                            saveTempPlaylist(folder);
-                        }
-                    }
-                };
-            } catch (e) {
+        async function readStream() {
+            const { done, value } = await reader.read();
+            if (done) {
                 spinner.style.display = 'none';
                 spinnerText.style.display = 'none';
-                showNotification(`Erro ao escanear: ${e.message}`, true);
+                updateFileList(currentFiles);
+                playedVideos.clear();
+                document.getElementById('playlistSelect').value = '';
+                showNotification(`Escaneamento concluído: ${currentFiles.length} arquivos`, false);
+                if (tempPlaylistName) {
+                    document.getElementById('savePlaylistButton').style.display = 'block';
+                }
+                return;
             }
+
+            const chunk = decoder.decode(value, { stream: true });
+            chunk.split('\n\n').filter(e => e).forEach(event => {
+                const data = JSON.parse(event.replace('data: ', ''));
+                if (data.status === 'start') {
+                    tempPlaylistName = data.temp_playlist;
+                    spinnerText.textContent = `Processando 0/${data.total} arquivos`;
+                } else if (data.status === 'update' || data.status === 'skipped') {
+                    currentFiles.push(data.file);
+                    updateFileList(currentFiles);
+                    if (data.progress && data.total) {
+                        spinnerText.textContent = `Processando ${data.progress}/${data.total} arquivos`;
+                    }
+                } else if (data.status === 'error') {
+                    showNotification(`Erro: ${data.message || data.file}`, true);
+                } else if (data.status === 'end') {
+                    spinner.style.display = 'none';
+                    spinnerText.style.display = 'none';
+                    updateFileList(currentFiles);
+                    playedVideos.clear();
+                    document.getElementById('playlistSelect').value = '';
+                    showNotification(`Escaneamento concluído: ${currentFiles.length} arquivos`, false);
+                    if (tempPlaylistName) {
+                        document.getElementById('savePlaylistButton').style.display = 'block';
+                    }
+                }
+            });
+            return readStream();
         }
 
-        async function saveTempPlaylist(folder) {
-            const name = `Temp_${folder.replace(/[\\/:]/g, '_')}_${new Date().toISOString().replace(/[:.]/g, '-')}`;
-            const files = currentFiles.map(f => f.path);
-            try {
-                const response = await fetch('/playlists', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, files, source_folder: folder })
-                });
-                const result = await response.json();
-                if (result.success) {
-                    await loadPlaylists();
-                    document.getElementById('playlistSelect').value = name;
-                    showNotification(`Playlist temporária "${name}" criada`, false);
-                } else {
-                    showNotification(`Erro ao criar playlist: ${result.error}`, true);
-                }
-            } catch (e) {
-                showNotification(`Erro ao criar playlist: ${e.message}`, true);
-            }
-        }
+        await readStream();
+    } catch (e) {
+        spinner.style.display = 'none';
+        spinnerText.style.display = 'none';
+        showNotification(`Erro ao escanear: ${e.message}`, true);
+    }
+}
 
-        async function loadPlaylists() {
-            try {
-                const response = await fetch('/playlists');
-                const playlists = await response.json();
-                const select = document.getElementById('playlistSelect');
-                select.innerHTML = '<option value="">Selecionar Playlist</option><option value="favorites">Favoritos</option>';
-                for (const name in playlists) {
-                    const option = document.createElement('option');
-                    option.value = name;
-                    option.textContent = name;
-                    select.appendChild(option);
-                }
-            } catch (e) {
-                console.error('Erro ao carregar playlists:', e);
+async function saveTempPlaylist() {
+    if (!tempPlaylistName) {
+        showNotification('Nenhuma playlist temporária disponível!', true);
+        return;
+    }
+    const newName = prompt('Nome da nova playlist:');
+    if (!newName) return;
+    try {
+        const response = await fetch('/save_temp_playlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ temp_name: tempPlaylistName, new_name: newName })
+        });
+        const result = await response.json();
+        if (result.success) {
+            await loadPlaylists();
+            document.getElementById('playlistSelect').value = newName;
+            document.getElementById('savePlaylistButton').style.display = 'none';
+            tempPlaylistName = null;
+            showNotification(`Playlist "${newName}" salva`, false);
+        } else {
+            showNotification(`Erro ao salvar playlist: ${result.error}`, true);
+        }
+    } catch (e) {
+        showNotification(`Erro ao salvar playlist: ${e.message}`, true);
+    }
+}
+
+async function loadPlaylists() {
+    try {
+        const response = await fetch('/playlists');
+        const playlists = await response.json();
+        const select = document.getElementById('playlistSelect');
+        select.innerHTML = '<option value="">Selecionar Playlist</option><option value="favorites">Favoritos</option>';
+        for (const name in playlists) {
+            if (!name.startsWith('temp_')) { // Excluir playlists temporárias
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                select.appendChild(option);
             }
         }
+    } catch (e) {
+        console.error('Erro ao carregar playlists:', e);
+    }
+}
 
         async function loadSessions() {
             try {
