@@ -1,3 +1,10 @@
+git checkout main
+git pull origin main
+git merge ID
+git push origin main
+
+
+
 1. Sim, você pode desfazer um merge depois
 Se você ainda não deu o merge, não há risco. Mas mesmo que já tenha dado merge e feito push, você pode:
 
@@ -35,3 +42,46 @@ git checkout main
 git reset --hard backup-pre-merge
 
 Se quiser, me diga o nome das branches e o estado atual (git log --oneline --graph --all) que eu te oriento exatamente.
+
+## Vixi... fiz merda... estou na main mas fiz um commit do codigo que estou trabalhando (v4.0) mas esqueci de fazer o checkout pro commit certo, e fiz da main... ai ficou um commit como da main... como volto atras e commito no lugar certo? ##
+
+
+O ChatGPT disse:
+Relaxa, isso é comum — e tem conserto. Vamos corrigir o commit errado que você fez direto na main, e mover ele para a branch certa (ex: v4.0). Aqui vai o passo a passo:
+
+✅ Situação
+Você está na main e:
+
+Fez um commit que deveria estar na v4.0.
+
+Mas esqueceu de trocar de branch.
+
+✅ Solução passo a passo
+1. Pegue o hash do commit errado (último da main):
+git log --oneline
+Vai aparecer algo assim:
+
+a1b2c3d Corrigido sistema de scan para v4.0
+x9y8z7w Commit anterior da main
+Copie o hash desse commit (ex: a1b2c3d).
+
+2. Volte a main para o commit anterior:
+git reset --hard HEAD~1
+⚠️ Isso remove o commit da main. Se você já deu push, vai precisar fazer git push --force.
+
+3. Troque para a branch correta (v4.0 ou outra):
+git checkout v4.0
+4. Adicione o commit salvo usando cherry-pick:
+git cherry-pick a1b2c3d
+Isso aplica aquele commit na branch v4.0.
+
+5. (Opcional) Apague o commit da main no repositório remoto:
+Se você já tinha feito push da main com o commit errado:
+
+git push origin main --force
+⚠️ Cuidado: só faça isso se ninguém mais estiver trabalhando na main. Forçar o histórico sobrescreve no servidor.
+
+✅ Resultado
+main volta ao estado anterior ao erro.
+
+O commit agora está corretamente na v4.0.
