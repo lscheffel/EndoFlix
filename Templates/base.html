@@ -604,38 +604,52 @@ async function loadPlaylists() {
         });
 
         document.getElementById('updatePlaylist').addEventListener('click', async () => {
-            const select = document.getElementById('playlistSelect');
-            const name = select.value;
-            if (!name || name === 'favorites') return showNotification('Selecione uma playlist válida!', true);
-            if (!confirm(`Deseja atualizar a playlist "${name}" com base na pasta original?`)) return;
-            const spinner = document.getElementById('loadingSpinner');
-            const spinnerText = document.getElementById('spinnerText');
-            spinner.style.display = 'block';
-            spinnerText.style.display = 'block';
-            spinnerText.textContent = 'Atualizando playlist...';
-            try {
-                const response = await fetch('/update_playlist', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name })
-                });
-                const result = await response.json();
-                if (result.success) {
-                    currentFiles = result.files.map(f => ({ path: f }));
-                    updateFileList(currentFiles);
-                    await loadPlaylists();
-                    select.value = name;
-                    showNotification('Playlist atualizada!', false);
-                } else {
-                    showNotification(`Erro ao atualizar playlist: ${result.error}`, true);
-                }
-            } catch (e) {
-                showNotification(`Erro ao atualizar playlist: ${e.message}`, true);
-            } finally {
-                spinner.style.display = 'none';
-                spinnerText.style.display = 'none';
-            }
+    const select = document.getElementById('playlistSelect');
+    const name = select.value;
+    if (!name || name === 'favorites') return showNotification('Selecione uma playlist válida!', true);
+    if (!confirm(`Deseja atualizar a playlist "${name}" com base na pasta original?`)) return;
+    const spinner = document.getElementById('loadingSpinner');
+    const spinnerText = document.getElementById('spinnerText');
+    spinner.style.display = 'block';
+    spinnerText.style.display = 'block';
+    spinnerText.textContent = 'Atualizando playlist...';
+    try {
+        // Obter source_folder da playlist
+        const playlistResponse = await fetch('/playlists');
+        const playlists = await playlistResponse.json();
+        const playlist = playlists[name];
+        if (!playlist || !playlist.source_folder) {
+            throw new Error('Pasta da playlist não encontrada');
+        }
+        const sourceFolder = playlist.source_folder;
+
+        // Enviar atualização com temp_playlist, se disponível
+        const response = await fetch('/update_playlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                source_folder: sourceFolder,
+                temp_playlist: tempPlaylistName || null
+            })
         });
+        const result = await response.json();
+        if (result.success) {
+            currentFiles = result.files.map(f => ({ path: f, duration: 0 }));
+            updateFileList(currentFiles);
+            await loadPlaylists();
+            select.value = name;
+            showNotification(`Playlist "${name}" atualizada com ${result.files.length} arquivos`, false);
+        } else {
+            showNotification(`Erro ao atualizar playlist: ${result.error}`, true);
+        }
+    } catch (e) {
+        showNotification(`Erro ao atualizar playlist: ${e.message}`, true);
+    } finally {
+        spinner.style.display = 'none';
+        spinnerText.style.display = 'none';
+    }
+});
 
         document.getElementById('saveSession').addEventListener('click', async () => {
             const videos = Array.from(videoContainers).map((container, index) => {
