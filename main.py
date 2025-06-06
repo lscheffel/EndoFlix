@@ -89,11 +89,28 @@ def signal_handler(sig, frame):
     sys.exit(0)
     signal.signal(signal.SIGINT, signal_handler)
 
-def calculate_hash(file_path):
+def calculate_hash(file_path, max_bytes=2*1024*1024):  # 2MB início + 2MB meio
     sha256_hash = hashlib.sha256()
     with open(file_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
+        # Primeiros 2MB
+        bytes_read = 0
+        while bytes_read < max_bytes:
+            byte_block = f.read(4096)
+            if not byte_block:
+                break
             sha256_hash.update(byte_block)
+            bytes_read += len(byte_block)
+        # Pular para o meio do arquivo
+        file_size = os.stat(file_path).st_size
+        if file_size > max_bytes * 2:
+            f.seek(file_size // 2)
+            bytes_read = 0
+            while bytes_read < max_bytes:
+                byte_block = f.read(4096)
+                if not byte_block:
+                    break
+                sha256_hash.update(byte_block)
+                bytes_read += len(byte_block)
     return sha256_hash.hexdigest()
 
 def get_video_metadata(file_path):
@@ -175,7 +192,7 @@ def process_file(file):
         "hash_id": hash_id,
         "file_path": file_path_str,
         "size_bytes": stats.st_size,
-        "created_at": datetime.fromtimestamp(stats.st_ctime),
+        "created_at": datetime.fromtimestamp(stats.st_birthtime),
         "modified_at": datetime.fromtimestamp(stats.st_mtime),
         "duration_seconds": metadata["duration_seconds"],
         "resolution": metadata["resolution"],
