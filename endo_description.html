@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EndoFlix - Descrição Completa do Repositório</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            scroll-behavior: smooth;
+        }
+        .navbar {
+            background: rgba(255, 255, 255, 0.95) !important;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+        }
+        .section {
+            padding: 80px 0;
+            min-height: 100vh;
+        }
+        .section:nth-child(even) {
+            background: rgba(255, 255, 255, 0.9);
+        }
+        .section:nth-child(odd) {
+            background: rgba(248, 249, 250, 0.9);
+        }
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 120px 0;
+            text-align: center;
+        }
+        .hero h1 {
+            font-size: 4rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .hero p {
+            font-size: 1.5rem;
+            margin-bottom: 40px;
+        }
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+        .btn-custom {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-custom:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .accordion-button {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            color: white;
+            border: none;
+            border-radius: 10px;
+        }
+        .accordion-button:not(.collapsed) {
+            background: linear-gradient(45deg, #20c997, #17a2b8);
+            color: white;
+        }
+        .footer {
+            background: #343a40;
+            color: white;
+            padding: 40px 0;
+            text-align: center;
+        }
+        .fade-in {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .highlight {
+            background: linear-gradient(45deg, #ff6b6b, #ffa500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light fixed-top">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="#hero">
+                <i class="bi bi-play-circle-fill text-primary"></i> EndoFlix
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="#manifesto">Manifesto</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#arquivos">Arquivos</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#analise">Análise</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#funcoes">Funções</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#versionamento">Versionamento</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#proximos">Próximos Passos</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#faq">FAQ</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#sugestoes">Sugestões</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#contribuir">Contribua</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <section id="hero" class="hero">
+        <div class="container">
+            <h1 class="fade-in">EndoFlix</h1>
+            <p class="fade-in">Player de Vídeos Web Robusto e Dinâmico</p>
+            <p class="fade-in">Organize, reproduza e gerencie seus vídeos com estilo e eficiência</p>
+            <a href="#manifesto" class="btn btn-custom btn-lg">Explorar Projeto</a>
+        </div>
+    </section>
+
+    <section id="manifesto" class="section">
+        <div class="container">
+            <h2 class="text-center mb-5 highlight">Manifesto do Projeto</h2>
+            <div class="row">
+                <div class="col-lg-8 mx-auto">
+                    <p class="lead">EndoFlix é um player de vídeos web robusto, construído com Flask e Bootstrap, para organizar e reproduzir arquivos de vídeo de forma prática e dinâmica. Escaneie pastas, crie playlists, salve sessões, randomize vídeos com shuffle (individual ou automático) e aproveite um layout com 4 players simultâneos, tudo integrado com PostgreSQL para gerenciamento de dados.</p>
+                    <h4>Linguagens Utilizadas</h4>
+                    <ul>
+                        <li><strong>Python:</strong> Backend com Flask para servidor web</li>
+                        <li><strong>JavaScript:</strong> Interatividade e manipulação DOM</li>
+                        <li><strong>HTML/CSS:</strong> Estrutura e estilização com Bootstrap</li>
+                        <li><strong>SQL:</strong> PostgreSQL para persistência de dados</li>
+                    </ul>
+                    <h4>Módulos e Bibliotecas</h4>
+                    <ul>
+                        <li>Flask: Framework web</li>
+                        <li>psycopg2: Conector PostgreSQL</li>
+                        <li>Redis: Cache de metadados</li>
+                        <li>Pathlib: Manipulação de caminhos</li>
+                        <li>Concurrent.futures: Processamento paralelo</li>
+                    </ul>
+                    <h4>Ferramentas</h4>
+                    <ul>
+                        <li>FFmpeg: Extração de metadados de vídeo</li>
+                        <li>Redis Server: Cache em memória</li>
+                        <li>PostgreSQL: Banco de dados relacional</li>
+                        <li>Git: Controle de versão</li>
+                    </ul>
+                    <h4>Objetivos</h4>
+                    <p>Fornecer uma solução completa para gerenciamento e reprodução de vídeos locais, com interface moderna e funcionalidades avançadas de organização.</p>
+                    <h4>Funcionalidades Principais</h4>
+                    <ul>
+                        <li>Escaneamento automático de pastas</li>
+                        <li>Gerenciamento de playlists e sessões</li>
+                        <li>Shuffle inteligente com priorização de vídeos não reproduzidos</li>
+                        <li>Interface com 4 players simultâneos</li>
+                        <li>Drag-and-drop para carregamento rápido</li>
+                        <li>Sistema de favoritos</li>
+                        <li>Captura de snapshots e bursts</li>
+                    </ul>
+                    <h4>Abordagem de Design</h4>
+                    <p>Design moderno e responsivo focado na usabilidade, com layout em grade 2x2 para players, barra lateral ajustável e tema escuro/claro. Utiliza animações suaves e feedback visual para melhor experiência do usuário.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="arquivos" class="section">
+        <div class="container">
+            <h2 class="text-center mb-5 highlight">Arquivos do Repositório</h2>
+            <div class="row">
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">cache.py</h5>
+                            <p class="card-text">Módulo responsável pelo gerenciamento de cache usando Redis, incluindo inicialização, armazenamento e recuperação de metadados de vídeo.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">config.py</h5>
+                            <p class="card-text">Arquivo de configurações centralizadas, definindo parâmetros para banco de dados, Redis, caminhos e processamento.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">db.py</h5>
+                            <p class="card-text">Funções utilitárias para operações de banco de dados, incluindo conexões, consultas e manipulação de dados.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">dicas merge.prompt</h5>
+                            <p class="card-text">Arquivo de texto com dicas e orientações para realização de merges no Git, facilitando o fluxo de trabalho colaborativo.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">file_processor.py</h5>
+                            <p class="card-text">Módulo para processamento de arquivos de vídeo, incluindo extração de metadados, cálculo de hashes e indexação no banco.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">main.py</h5>
+                            <p class="card-text">Arquivo principal da aplicação Flask, contendo todas as rotas, lógica de negócio e integração com banco de dados e cache.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">panic_links.md</h5>
+                            <p class="card-text">Lista de links para o botão de pânico, permitindo redirecionamento rápido para sites externos em situações de emergência.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">README.md</h5>
+                            <p class="card-text">Documentação completa do projeto, incluindo instalação, uso, funcionalidades e contribuição.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">requirements.txt</h5>
+                            <p class="card-text">Lista de dependências Python necessárias para execução do projeto.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">snapshot_processor.py</h5>
+                            <p class="card-text">Módulo para processamento de snapshots e bursts de vídeo, incluindo captura e salvamento de imagens.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">snapshots/</h5>
+                            <p class="card-text">Diretório para armazenamento de snapshots capturados dos vídeos.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">Static/</h5>
+                            <p class="card-text">Diretório para arquivos estáticos como CSS, JavaScript e ícones.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">Templates/</h5>
+                            <p class="card-text">Diretório contendo templates HTML para as diferentes páginas da aplicação.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">tests/</h5>
+                            <p class="card-text">Diretório para testes automatizados do projeto.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="analise" class="section">
+        <div class="container">
+            <h2 class="text-center mb-5 highlight">Análise do Projeto</h2>
+            <div class="row">
+                <div class="col-lg-6">
+                    <h3 class="text-success">Pontos Fortes</h3>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">Interface moderna e responsiva com Bootstrap</li>
+                        <li class="list-group-item">Integração robusta com PostgreSQL e Redis</li>
+                        <li class="list-group-item">Funcionalidades avançadas como shuffle inteligente e auto-shuffle</li>
+                        <li class="list-group-item">Suporte a múltiplos formatos de vídeo</li>
+                        <li class="list-group-item">Sistema de cache eficiente para metadados</li>
+                        <li class="list-group-item">Drag-and-drop intuitivo</li>
+                        <li class="list-group-item">Captura de snapshots e bursts</li>
+                    </ul>
+                </div>
+                <div class="col-lg-6">
+                    <h3 class="text-warning">Pontos Fracos</h3>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">Dependência de FFmpeg e Redis instalados localmente</li>
+                        <li class="list-group-item">Configuração inicial complexa com PostgreSQL</li>
+                        <li class="list-group-item">Limitação a arquivos locais (não suporta streaming remoto)</li>
+                        <li class="list-group-item">Possível lentidão com bibliotecas grandes de vídeos</li>
+                        <li class="list-group-item">Falta de testes automatizados abrangentes</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="funcoes" class="section">
+        <div class="container">
+            <h2 class="text-center mb-5 highlight">Principais Funções Implementadas</h2>
+            <div class="row">
+                <div class="col-lg-10 mx-auto">
+                    <div class="accordion" id="functionsAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#scan">
+                                    Escaneamento de Pastas
+                                </button>
+                            </h2>
+                            <div id="scan" class="accordion-collapse collapse show" data-bs-parent="#functionsAccordion">
+                                <div class="accordion-body">
+                                    Função que varre diretórios recursivamente em busca de arquivos de vídeo suportados (.mp4, .mkv, .mov, etc.). Utiliza processamento paralelo para extrair metadados com FFmpeg, calcula hashes para detecção de duplicatas e indexa tudo no PostgreSQL. Suporta atualização incremental de pastas já escaneadas.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#shuffle">
+                                    Shuffle Inteligente
+                                </button>
+                            </h2>
+                            <div id="shuffle" class="accordion-collapse collapse" data-bs-parent="#functionsAccordion">
+                                <div class="accordion-body">
+                                    Sistema de randomização que prioriza vídeos não reproduzidos recentemente. Oferece shuffle geral (4 vídeos aleatórios), shuffles individuais por player e modo auto-shuffle com intervalo configurável. Mantém histórico de reproduções para evitar repetições excessivas.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#playlists">
+                                    Gerenciamento de Playlists
+                                </button>
+                            </h2>
+                            <div id="playlists" class="accordion-collapse collapse" data-bs-parent="#functionsAccordion">
+                                <div class="accordion-body">
+                                    Permite criação, salvamento e carregamento de playlists no PostgreSQL. Suporta playlists temporárias durante escaneamento e conversão para permanentes. Inclui atualização automática baseada na pasta de origem e remoção de playlists.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sessions">
+                                    Sistema de Sessões
+                                </button>
+                            </h2>
+                            <div id="sessions" class="accordion-collapse collapse" data-bs-parent="#functionsAccordion">
+                                <div class="accordion-body">
+                                    Salva e restaura estados de reprodução com os vídeos em cada player. Permite compartilhamento de sessões entre usuários e gerenciamento completo (criar, carregar, remover).
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#snapshots">
+                                    Captura de Snapshots
+                                </button>
+                            </h2>
+                            <div id="snapshots" class="accordion-collapse collapse" data-bs-parent="#functionsAccordion">
+                                <div class="accordion-body">
+                                    Sistema de captura de imagens estáticas dos vídeos em reprodução. Suporta snapshots únicos e bursts (sequências rápidas). Utiliza canvas HTML5 para captura e salva em formato WebP na pasta do vídeo.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="versionamento" class="section">
+        <div class="container">
+            <h2 class="text-center mb-5 highlight">Versionamento e Histórico</h2>
+            <div class="row">
+                <div class="col-lg-8 mx-auto">
+                    <h4>Branches Principais</h4>
+                    <ul>
+                        <li><strong>main:</strong> Branch principal com código estável e releases</li>
+                        <li><strong>develop:</strong> Branch de desenvolvimento para novas funcionalidades</li>
+                        <li><strong>feature/*:</strong> Branches para desenvolvimento de features específicas</li>
+                    </ul>
+                    <h4>Commits Relevantes</h4>
+                    <ul>
+                        <li>Refatoração completa para PostgreSQL (v3.0.0)</li>
+                        <li>Implementação de shuffle inteligente e auto-shuffle</li>
+                        <li>Adição de sistema de snapshots e bursts</li>
+                        <li>Melhorias na interface e responsividade</li>
+                        <li>Correções de bugs e otimizações de performance</li>
+                    </ul>
+                    <h4>Histórico Resumido</h4>
+                    <p><strong>v3.0.0 (2025-05-11):</strong> Refatoração completa removendo JSON e implementando PostgreSQL. Corrigido gerenciamento de playlists e sessões. Adicionados shuffles individuais e auto-shuffle. Logs detalhados.</p>
+                    <p><strong>v2.0.0:</strong> Correções de layout e suporte aprimorado a codecs de vídeo (H.264).</p>
+                    <p><strong>v1.0.0:</strong> Versão inicial com funcionalidades básicas de player de vídeo.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="proximos" class="section">
+        <div class="container">
+            <h2 class="text-center mb-5 highlight">Próximos Passos</h2>
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="bi bi-phone display-4 text-primary mb-3"></i>
+                            <h5 class="card-title">Aplicativo Mobile</h5>
+                            <p class="card-text">Desenvolvimento de versão mobile nativa para iOS e Android, permitindo acesso remoto aos vídeos e sincronização com a versão web.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="bi bi-cloud display-4 text-success mb-3"></i>
+                            <h5 class="card-title">Integração com Nuvem</h5>
+                            <p class="card-text">Suporte a armazenamento em nuvem (AWS S3, Google Drive) para backup automático e acesso remoto aos vídeos.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="bi bi-robot display-4 text-warning mb-3"></i>
+                            <h5 class="card-title">Recursos de IA</h5>
+                            <p class="card-text">Implementação de reconhecimento automático de conteúdo, sugestões inteligentes de vídeos e análise de padrões de visualização.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="faq" class="section">
+        <div class="container">
+            <h2 class="text-center mb-5 highlight">Perguntas Frequentes</h2>
+            <div class="row">
+                <div class="col-lg-8 mx-auto">
+                    <div class="accordion" id="faqAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                                    Como instalar e configurar o EndoFlix?
+                                </button>
+                            </h2>
+                            <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Clone o repositório, instale as dependências com pip, configure PostgreSQL criando o banco 'videos', execute o script SQL para tabelas e rode python main.py. Certifique-se de ter FFmpeg e Redis instalados.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                                    Quais formatos de vídeo são suportados?
+                                </button>
+                            </h2>
+                            <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    O EndoFlix suporta .mp4, .mkv, .mov, .divx, .webm, .mpg e .avi. Utiliza FFmpeg para extração de metadados e reprodução.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                                    Como funciona o sistema de shuffle?
+                                </button>
+                            </h2>
+                            <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    O shuffle prioriza vídeos não reproduzidos. Shuffle geral carrega 4 vídeos aleatórios. Shuffles individuais afetam apenas um player. Auto-shuffle repete automaticamente em intervalos configuráveis.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">
+                                    É possível salvar sessões de reprodução?
+                                </button>
+                            </h2>
+                            <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Sim, você pode salvar o estado atual dos 4 players como uma sessão nomeada no PostgreSQL. Sessões podem ser carregadas posteriormente para retomar exatamente de onde parou.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5">
+                                    Como capturar snapshots dos vídeos?
+                                </button>
+                            </h2>
+                            <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Clique no ícone de câmera 📸 em qualquer player para capturar um snapshot único, ou use 🔄 para burst (sequência rápida). As imagens são salvas automaticamente na pasta do vídeo em formato WebP.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="sugestoes" class="section">
+        <div class="container">
+            <h2 class="text-center mb-5 highlight">Sugestões de Features Futuras</h2>
+            <div class="row">
+                <div class="col-lg-10 mx-auto">
+                    <div class="list-group">
+                        <div class="list-group-item">
+                            <h5>Modo de Reprodução Contínua</h5>
+                            <p>Implementar fila de reprodução automática que avança para o próximo vídeo quando o atual termina, com opções de loop e repeat. <strong>Valor:</strong> Melhora experiência de visualização longa, reduz interrupções manuais.</p>
+                        </div>
+                        <div class="list-group-item">
+                            <h5>Integração com APIs de Streaming</h5>
+                            <p>Adicionar suporte para YouTube, Vimeo e outras plataformas de streaming, permitindo misturar vídeos locais com conteúdo online. <strong>Valor:</strong> Expande biblioteca de vídeos disponível, centraliza experiência de visualização.</p>
+                        </div>
+                        <div class="list-group-item">
+                            <h5>Sistema de Usuários e Compartilhamento</h5>
+                            <p>Implementar contas de usuário com playlists compartilhadas e sessões colaborativas em tempo real. <strong>Valor:</strong> Permite compartilhamento de descobertas, cria comunidade em torno do projeto.</p>
+                        </div>
+                        <div class="list-group-item">
+                            <h5>Edição Básica de Vídeos</h5>
+                            <p>Adicionar ferramentas para corte, concatenação e ajustes básicos de vídeo diretamente na interface. <strong>Valor:</strong> Reduz necessidade de software externo, integra workflow completo.</p>
+                        </div>
+                        <div class="list-group-item">
+                            <h5>Modo Teatro com Subtítulos</h5>
+                            <p>Interface imersiva em tela cheia com suporte avançado a legendas e controles touch-friendly. <strong>Valor:</strong> Otimiza experiência de visualização em diferentes dispositivos e cenários.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="contribuir" class="section">
+        <div class="container">
+            <h2 class="text-center mb-5 highlight">Contribua com o Projeto</h2>
+            <div class="row">
+                <div class="col-lg-8 mx-auto text-center">
+                    <p class="lead mb-4">O EndoFlix é um projeto open source e adoraria receber suas contribuições!</p>
+                    <div class="mb-4">
+                        <img src="https://img.shields.io/github/stars/lscheffel/EndoFlix?style=social" alt="GitHub stars" class="me-2">
+                        <img src="https://img.shields.io/github/forks/lscheffel/EndoFlix?style=social" alt="GitHub forks" class="me-2">
+                        <img src="https://img.shields.io/github/issues/lscheffel/EndoFlix" alt="GitHub issues">
+                    </div>
+                    <a href="https://github.com/lscheffel/EndoFlix" class="btn btn-custom btn-lg me-3">
+                        <i class="bi bi-github"></i> Ver no GitHub
+                    </a>
+                    <a href="https://github.com/lscheffel/EndoFlix/issues" class="btn btn-outline-light btn-lg">
+                        <i class="bi bi-bug"></i> Reportar Issue
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 EndoFlix. Desenvolvido com 💪 por lscheffel.</p>
+            <p>Feito com Flask, Bootstrap e muito código Python.</p>
+            <div class="mt-3">
+                <a href="https://github.com/lscheffel/EndoFlix" class="text-light me-3">
+                    <i class="bi bi-github"></i> GitHub
+                </a>
+                <a href="#hero" class="text-light">
+                    <i class="bi bi-arrow-up-circle"></i> Voltar ao Topo
+                </a>
+            </div>
+        </div>
+    </footer>
+
+    <button id="backToTop" class="btn btn-primary position-fixed" style="bottom: 20px; right: 20px; display: none; z-index: 1000; border-radius: 50%; width: 50px; height: 50px;">
+        <i class="bi bi-arrow-up"></i>
+    </button>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Animações de fade-in
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.fade-in').forEach(el => {
+            observer.observe(el);
+        });
+
+        // Smooth scrolling para navegação
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Animação de hover para cards
+        document.querySelectorAll('.card').forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-10px) scale(1.02)';
+            });
+            card.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0) scale(1)';
+            });
+        });
+
+        // Botão "Voltar ao Topo"
+        const backToTopBtn = document.getElementById('backToTop');
+
+        window.addEventListener('scroll', () => {
+            if (window.pageYOffset > 300) {
+                backToTopBtn.style.display = 'block';
+            } else {
+                backToTopBtn.style.display = 'none';
+            }
+        });
+
+        backToTopBtn.addEventListener('click', () => {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
+    </script>
+</body>
+</html>
