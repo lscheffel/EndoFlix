@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, flash
 import os
 from pathlib import Path
 import psycopg2.pool
@@ -16,8 +16,23 @@ import sys
 import base64
 import threading
 from queue import Queue
+from flask_login import login_user, login_required, logout_user, current_user
+
+# Import auth module
+from auth import login_manager
+
+# Import blueprints
+from blueprints.main import main_bp
+from blueprints.auth import auth_bp
+from blueprints.scan import scan_bp
+from blueprints.playlists import playlists_bp
+from blueprints.sessions import sessions_bp
+from blueprints.favorites import favorites_bp
+from blueprints.analytics import analytics_bp
+from blueprints.video import video_bp
 
 app = Flask(__name__)
+app.secret_key = 'endoFlix_secret_key_2024'  # Change this in production
 TRANSCODE_DIR = Path("transcode")
 FFPROBE_PATH = r"C:\Program Files\FFMPEG\bin\ffprobe.exe"
 REDIS_SERVER_PATH = r"C:\Program Files\Redis\redis-server.exe"
@@ -25,7 +40,21 @@ REDIS_CLIENT = None
 REDIS_PROCESS = None
 DB_POOL = psycopg2.pool.SimpleConnectionPool(1, 20, dbname="videos", user="postgres", password="admin", host="localhost", port="5432")
 
+# Flask-Login setup
+login_manager.init_app(app)
+login_manager.login_view = 'auth.login'
+
 logging.basicConfig(level=logging.INFO)
+
+# Register blueprints
+app.register_blueprint(main_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(scan_bp)
+app.register_blueprint(playlists_bp)
+app.register_blueprint(sessions_bp)
+app.register_blueprint(favorites_bp)
+app.register_blueprint(analytics_bp)
+app.register_blueprint(video_bp)
 
 def start_redis():
     global REDIS_PROCESS
