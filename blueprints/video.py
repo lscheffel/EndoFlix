@@ -6,8 +6,12 @@ import json
 import logging
 from datetime import datetime
 from flask_login import login_required
-from ..main import DB_POOL, TRANSCODE_DIR  # Import from main for now
-from ..utils import process_file, index_file
+from db import Database
+from config import Config
+from utils import process_file, index_file
+
+DB_POOL = Database()  # Create database instance
+TRANSCODE_DIR = Config.TRANSCODE_DIR
 
 video_bp = Blueprint('video', __name__)
 
@@ -35,21 +39,18 @@ def serve_video_range(input_path):
         f.seek(start)
         data = f.read(content_length)
 
-    conn = DB_POOL.getconn()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT 1 FROM endoflix_files WHERE file_path = %s", (input_path_str,))
-        if not cur.fetchone():
-            file_data = process_file(input_path_str)
-            index_file(conn, file_data)
-        cur.execute("UPDATE endoflix_files SET view_count = view_count + 1, last_viewed_at = CURRENT_TIMESTAMP WHERE file_path = %s", (input_path_str,))
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        logging.error(f"Erro ao atualizar visualizações para {input_path_str}: {e}")
-    finally:
-        cur.close()
-        DB_POOL.putconn(conn)
+    with DB_POOL.get_connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute("SELECT 1 FROM endoflix_files WHERE file_path = %s", (input_path_str,))
+                if not cur.fetchone():
+                    file_data = process_file(input_path_str)
+                    index_file(conn, file_data)
+                cur.execute("UPDATE endoflix_files SET view_count = view_count + 1, last_viewed_at = CURRENT_TIMESTAMP WHERE file_path = %s", (input_path_str,))
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logging.error(f"Erro ao atualizar visualizações para {input_path_str}: {e}")
 
     return Response(
         data,

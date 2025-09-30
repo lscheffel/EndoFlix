@@ -1,3 +1,4 @@
+
 import psycopg2.pool
 from contextlib import contextmanager
 from config import Config
@@ -13,10 +14,11 @@ class Database:
 
     def __init__(self):
         if self._pool is None:
+            config = Config()
             self._pool = psycopg2.pool.SimpleConnectionPool(
-                Config.DB_POOL_MIN,
-                Config.DB_POOL_MAX,
-                **Config.DB_PARAMS
+                config.DB_POOL_MIN,
+                config.DB_POOL_MAX,
+                **config.DB_PARAMS
             )
 
     @contextmanager
@@ -27,7 +29,13 @@ class Database:
         finally:
             self._pool.putconn(conn)
 
-    def close(self):
+    def getconn(self):
+        return self._pool.getconn()
+
+    def putconn(self, conn):
+        self._pool.putconn(conn)
+
+    def closeall(self):
         if self._pool:
             self._pool.closeall()
             self._pool = None
@@ -43,4 +51,4 @@ class Database:
             with conn.cursor() as cur:
                 cur.execute(query, params or ())
                 conn.commit()
-                return cur.rowcount 
+                return cur.rowcount

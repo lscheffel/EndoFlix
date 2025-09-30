@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 import logging
 from flask_login import login_required
-from ..utils import get_media_files
+from utils import get_media_files
 
 scan_bp = Blueprint('scan', __name__)
 

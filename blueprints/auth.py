@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required
 import bcrypt
-from ..auth import User, DEFAULT_PASSWORD_HASH
+from auth import User, DEFAULT_PASSWORD_HASH
 
 auth_bp = Blueprint('auth', __name__)
 

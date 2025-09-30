@@ -1,19 +1,19 @@
 from pathlib import Path
 from typing import Dict, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class Config:
     # Database
     DB_POOL_MIN: int = 1
     DB_POOL_MAX: int = 20
-    DB_PARAMS: Dict[str, Any] = {
+    DB_PARAMS: Dict[str, Any] = field(default_factory=lambda: {
         'dbname': 'videos',
         'user': 'postgres',
         'password': 'admin',
         'host': 'localhost',
         'port': '5432'
-    }
+    })
     CONNECTION_TIMEOUT: int = 30
     POOL_TIMEOUT: int = 30
     MAX_RETRIES: int = 3
