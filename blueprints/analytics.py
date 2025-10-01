@@ -15,19 +15,13 @@ def stats():
     with DB_POOL.get_connection() as conn:
         with conn.cursor() as cur:
             try:
-                # Use optimized materialized view for stats
-                cur.execute("SELECT total_videos, total_playlists, total_sessions FROM mv_analytics_stats")
-                result = cur.fetchone()
-                if result:
-                    video_count, playlist_count, session_count = result
-                else:
-                    # Fallback to direct queries if view not available
-                    cur.execute("SELECT COUNT(*) FROM endoflix_files")
-                    video_count = cur.fetchone()[0]
-                    cur.execute("SELECT COUNT(*) FROM endoflix_playlist WHERE is_temp = FALSE")
-                    playlist_count = cur.fetchone()[0]
-                    cur.execute("SELECT COUNT(*) FROM endoflix_session")
-                    session_count = cur.fetchone()[0]
+                # Direct queries for stats
+                cur.execute("SELECT COUNT(*) FROM endoflix_files")
+                video_count = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM endoflix_playlist WHERE is_temp = FALSE")
+                playlist_count = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM endoflix_session")
+                session_count = cur.fetchone()[0]
                 return jsonify({'videos': video_count, 'playlists': playlist_count, 'sessions': session_count})
             except Exception as e:
                 logging.error(f"Erro ao obter estatísticas: {e}")
@@ -49,13 +43,17 @@ def analytics():
                 cur.execute("SELECT name, files, play_count FROM endoflix_playlist")
                 playlists = [{"name": row[0], "files": row[1], "play_count": row[2]} for row in cur.fetchall()]
 
-                # Use optimized view for top videos
-                cur.execute("SELECT file_path, view_count, is_favorite FROM v_top_videos")
+                # Direct query for top videos
+                cur.execute("SELECT file_path, view_count, is_favorite FROM endoflix_files ORDER BY view_count DESC LIMIT 10")
                 top_videos = [{"path": row[0], "play_count": row[1], "favorited": row[2]} for row in cur.fetchall()]
 
-                # Use optimized view for file types
-                cur.execute("SELECT file_type, count FROM v_file_types")
-                file_types = {row[0]: row[1] for row in cur.fetchall()}
+                # Direct query for file types
+                cur.execute("SELECT file_path FROM endoflix_files")
+                file_types = Counter()
+                for row in cur.fetchall():
+                    from pathlib import Path
+                    ext = Path(row[0]).suffix.lower()
+                    file_types[ext] += 1
 
                 cur.execute("SELECT name, videos FROM endoflix_session")
                 sessions = []
