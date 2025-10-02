@@ -41,9 +41,22 @@
         }
         .spinner-text { display: none; text-align: center; font-size: 0.8em; color: #f8f9fa; margin-top: 5px; }
         .theme-toggle { cursor: pointer; }
-        @keyframes spin { 
-            0% { transform: rotate(0deg); } 
-            100% { transform: rotate(360deg); } 
+        .loop-overlay { position: absolute; bottom: 40px; right: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 2px 5px; border-radius: 3px; font-size: 0.9em; color: #fff; }
+        .dropdown-submenu {
+            position: relative;
+        }
+        .dropdown-submenu .dropdown-menu {
+            top: 0;
+            left: 100%;
+            margin-top: -1px;
+            display: none;
+        }
+        .dropdown-submenu .dropdown-menu.show {
+            display: block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -51,7 +64,8 @@
     <header class="p-2 bg-secondary d-flex justify-content-between">
         <h1 class="h5 m-0">EndoFlix - Video Player <span id="stats"></span></h1>
         <div>
-            <i class="bi bi-lightbulb theme-toggle me-2" id="themeToggle"></i>
+            <input type="text" id="searchInput" class="form-control me-2" placeholder="Search videos" style="width: 200px;">
+<i class="bi bi-lightbulb theme-toggle me-2" id="themeToggle"></i>
             <a href="/keymaps" class="text-light me-2">Keymaps</a>
             <a href="/about" class="text-light me-2">Sobre</a>
             <a href="/ultra" class="text-light me-2">Ultra Mode</a>
@@ -80,6 +94,10 @@
                         <option value="3">3x</option>
                         <option value="4">4x</option>
                     </select>
+                    <div class="loop-overlay">
+                        <input type="checkbox" id="loop1" checked>
+                        <label for="loop1" style="margin-left: 5px;">Loop</label>
+                    </div>
                 </div>
                 <div class="p-1 video-container">
                     <video class="video-player" id="player2" controls preload="auto" loop>
@@ -98,6 +116,10 @@
                         <option value="3">3x</option>
                         <option value="4">4x</option>
                     </select>
+                    <div class="loop-overlay">
+                        <input type="checkbox" id="loop2" checked>
+                        <label for="loop2" style="margin-left: 5px;">Loop</label>
+                    </div>
                 </div>
                 <div class="p-1 video-container">
                     <video class="video-player" id="player3" controls preload="auto" loop>
@@ -116,6 +138,10 @@
                         <option value="3">3x</option>
                         <option value="4">4x</option>
                     </select>
+                    <div class="loop-overlay">
+                        <input type="checkbox" id="loop3" checked>
+                        <label for="loop3" style="margin-left: 5px;">Loop</label>
+                    </div>
                 </div>
                 <div class="p-1 video-container">
                     <video class="video-player" id="player4" controls preload="auto" loop>
@@ -134,6 +160,10 @@
                         <option value="3">3x</option>
                         <option value="4">4x</option>
                     </select>
+                    <div class="loop-overlay">
+                        <input type="checkbox" id="loop4" checked>
+                        <label for="loop4" style="margin-left: 5px;">Loop</label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -172,14 +202,28 @@
                 </div>
                 <div id="loadingSpinner" class="spinner"></div>
                 <div id="spinnerText" class="spinner-text">Processando...</div>
-                <select id="playlistSelect" class="form-select compact-control" onchange="loadSelectedPlaylist()">
-                    <option value="">Selecionar Playlist</option>
-                    <option value="favorites">Favoritos</option>
-                </select>
+                <div class="dropdown">
+                    <button class="btn btn-secondary dropdown-toggle form-select compact-control" type="button" id="playlistDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        Selecionar Playlist
+                    </button>
+                    <ul class="dropdown-menu" aria-labelledby="playlistDropdown">
+                        <li><a class="dropdown-item" href="#" onclick="loadSelectedPlaylist('favorites')">Favoritos</a></li>
+                        <li class="dropdown-submenu">
+                            <a class="dropdown-item dropdown-toggle" href="#" data-bs-toggle="dropdown">Recentes</a>
+                            <ul class="dropdown-menu" id="recentPlaylistsMenu">
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
                 <div class="btn-row">
                     <button id="savePlaylist" class="btn btn-primary compact-btn">Save Playlist</button>
+                    <button id="exportPlaylist" class="btn btn-secondary compact-btn">Export</button>
                     <button id="removePlaylist" class="btn btn-danger compact-btn">Remove Playlist</button>
                     <button id="updatePlaylist" class="btn btn-info compact-btn">Update Playlist</button>
+                </div>
+                <div class="btn-row">
+                    <input type="file" id="importFile" class="form-control compact-control" accept=".json,.csv" style="flex: 1;">
+                    <button id="importPlaylist" class="btn btn-success compact-btn">Import Playlist</button>
                 </div>
                 <select id="sessionSelect" class="form-select compact-control" onchange="loadSelectedSession()">
                     <option value="">Selecionar Sessão</option>
@@ -189,10 +233,32 @@
                     <button id="removeSession" class="btn btn-danger compact-btn">Remove Session</button>
                 </div>
                 <input type="text" id="filterInput" class="form-control compact-control" placeholder="Filtrar por nome">
-                <select id="sortSelect" class="form-select compact-control">
-                    <option value="name">A-Z</option>
-                    <option value="date">Data</option>
+                <select id="extensionFilter" class="form-select compact-control" style="margin-top: 5px;">
+                    <option value="">All Extensions</option>
                 </select>
+                <div class="d-flex gap-2" style="margin-top: 5px;">
+                    <input type="number" id="sizeMin" placeholder="Min Size (MB)" class="form-control compact-control" style="width: 100px;">
+                    <input type="number" id="sizeMax" placeholder="Max Size (MB)" class="form-control compact-control" style="width: 100px;">
+                </div>
+                <div class="d-flex gap-2" style="margin-top: 5px;">
+                    <input type="date" id="dateFrom" class="form-control compact-control">
+                    <input type="date" id="dateTo" class="form-control compact-control">
+                </div>
+                <select id="sortSelect" class="form-select compact-control">
+                    <option value="name-asc">Name A-Z</option>
+                    <option value="name-desc">Name Z-A</option>
+                    <option value="date-asc">Date Asc</option>
+                    <option value="date-desc">Date Desc</option>
+                </select>
+                <div class="d-flex gap-2" style="margin-top: 5px;">
+                    <label>
+                        <input type="checkbox" id="thumbnailCheckbox"> Enable Thumbnails
+                    </label>
+                </div>
+                <div class="btn-row">
+                    <button id="batchFavorites" class="btn btn-warning compact-btn">Add/Remove Favorites</button>
+                    <button id="batchRemovePlaylist" class="btn btn-danger compact-btn">Remove from Playlist</button>
+                </div>
                 <ul id="fileList" class="list-group compact-control" style="max-height: 50vh; overflow-y: auto;"></ul>
                 <div class="btn-row">
                     <button id="clearDeck" class="btn btn-warning compact-btn">Clear</button>
@@ -232,6 +298,8 @@
         let playedVideos = new Set();
         let autoShuffleIntervalId = null;
         let favorites = [];
+        let activePlayer = null;
+        let recentPlaylists = JSON.parse(localStorage.getItem('recentPlaylists')) || [];
 
         function showNotification(message, isError = false) {
             const notificationEl = document.createElement('div');
@@ -336,9 +404,8 @@
             if (done) {
                 spinner.style.display = 'none';
                 spinnerText.style.display = 'none';
-                updateFileList(currentFiles);
                 playedVideos.clear();
-                document.getElementById('playlistSelect').value = '';
+                loadSelectedPlaylist('');
                 showNotification(`Escaneamento concluído: ${currentFiles.length} arquivos`, false);
                 if (tempPlaylistName) {
                     document.getElementById('savePlaylistButton').style.display = 'block';
@@ -347,14 +414,14 @@
             }
 
             const chunk = decoder.decode(value, { stream: true });
-            chunk.split('\n\n').filter(e => e).forEach(event => {
+            for (const event of chunk.split('\n\n').filter(e => e)) {
                 const data = JSON.parse(event.replace('data: ', ''));
                 if (data.status === 'start') {
                     tempPlaylistName = data.temp_playlist;
                     spinnerText.textContent = `Processando 0/${data.total} arquivos`;
                 } else if (data.status === 'update' || data.status === 'skipped') {
                     currentFiles.push(data.file);
-                    updateFileList(currentFiles);
+                    await updateFileList(currentFiles);
                     if (data.progress && data.total) {
                         spinnerText.textContent = `Processando ${data.progress}/${data.total} arquivos`;
                     }
@@ -363,15 +430,15 @@
                 } else if (data.status === 'end') {
                     spinner.style.display = 'none';
                     spinnerText.style.display = 'none';
-                    updateFileList(currentFiles);
+                    await updateFileList(currentFiles);
                     playedVideos.clear();
-                    document.getElementById('playlistSelect').value = '';
+                    loadSelectedPlaylist('');
                     showNotification(`Escaneamento concluído: ${currentFiles.length} arquivos`, false);
                     if (tempPlaylistName) {
                         document.getElementById('savePlaylistButton').style.display = 'block';
                     }
                 }
-            });
+            }
             return readStream();
         }
 
@@ -399,7 +466,7 @@ async function saveTempPlaylist() {
         const result = await response.json();
         if (result.success) {
             await loadPlaylists();
-            document.getElementById('playlistSelect').value = newName;
+            loadSelectedPlaylist(newName);
             document.getElementById('savePlaylistButton').style.display = 'none';
             tempPlaylistName = null;
             showNotification(`Playlist "${newName}" salva`, false);
@@ -415,16 +482,36 @@ async function loadPlaylists() {
     try {
         const response = await fetch('/playlists');
         const playlists = await response.json();
-        const select = document.getElementById('playlistSelect');
-        select.innerHTML = '<option value="">Selecionar Playlist</option><option value="favorites">Favoritos</option>';
+        const menu = document.querySelector('.dropdown-menu');
+        // Clear existing playlists (keep favorites and submenu)
+        const items = menu.querySelectorAll('li:not(.dropdown-submenu):not(:first-child)');
+        items.forEach(item => item.remove());
+        // Add playlists
         for (const name in playlists) {
             if (!name.startsWith('temp_')) { // Excluir playlists temporárias
-                const option = document.createElement('option');
-                option.value = name;
-                option.textContent = name;
-                select.appendChild(option);
+                const li = document.createElement('li');
+                const a = document.createElement('a');
+                a.className = 'dropdown-item';
+                a.href = '#';
+                a.textContent = name;
+                a.onclick = () => loadSelectedPlaylist(name);
+                li.appendChild(a);
+                menu.appendChild(li);
             }
         }
+        // Populate recent submenu
+        const recentMenu = document.getElementById('recentPlaylistsMenu');
+        recentMenu.innerHTML = '';
+        recentPlaylists.forEach(name => {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.className = 'dropdown-item';
+            a.href = '#';
+            a.textContent = name;
+            a.onclick = () => loadSelectedPlaylist(name);
+            li.appendChild(a);
+            recentMenu.appendChild(li);
+        });
     } catch (e) {
         console.error('Erro ao carregar playlists:', e);
     }
@@ -451,7 +538,7 @@ async function loadPlaylists() {
             try {
                 const response = await fetch('/favorites');
                 favorites = await response.json();
-                updateFileList(currentFiles);
+                await updateFileList(currentFiles);
                 updateFavoriteIcons();
             } catch (e) {
                 console.error('Erro ao carregar favoritos:', e);
@@ -475,7 +562,7 @@ async function loadPlaylists() {
                         favorites.push(file);
                         showNotification('Adicionado aos favoritos', false);
                     }
-                    updateFileList(currentFiles);
+                    await updateFileList(currentFiles);
                     updateFavoriteIcons();
                 } else {
                     showNotification(`Erro ao gerenciar favorito: ${result.error}`, true);
@@ -498,26 +585,33 @@ async function loadPlaylists() {
             });
         }
 
-        async function loadSelectedPlaylist() {
-            const select = document.getElementById('playlistSelect');
-            const name = select.value;
+        async function loadSelectedPlaylist(name) {
             if (!name) {
                 currentFiles = [];
-                updateFileList(currentFiles);
+                await updateFileList(currentFiles);
+                document.getElementById('playlistDropdown').textContent = 'Selecionar Playlist';
                 return;
             }
             try {
                 if (name === 'favorites') {
                     currentFiles = favorites.map(f => ({ path: f }));
                     playedVideos.clear();
-                    updateFileList(currentFiles);
+                    await updateFileList(currentFiles);
                 } else {
                     const response = await fetch('/playlists');
                     const playlists = await response.json();
                     currentFiles = playlists[name] ? playlists[name].files.map(f => ({ path: f })) : [];
                     playedVideos.clear();
-                    updateFileList(currentFiles);
+                    await updateFileList(currentFiles);
                 }
+                // Update history
+                if (name !== 'favorites') {
+                    recentPlaylists = recentPlaylists.filter(p => p !== name);
+                    recentPlaylists.unshift(name);
+                    if (recentPlaylists.length > 5) recentPlaylists = recentPlaylists.slice(0, 5);
+                    localStorage.setItem('recentPlaylists', JSON.stringify(recentPlaylists));
+                }
+                document.getElementById('playlistDropdown').textContent = name;
             } catch (e) {
                 console.error('Erro ao carregar playlist:', e);
             }
@@ -579,10 +673,31 @@ async function loadPlaylists() {
             }
         });
 
+        document.getElementById('exportPlaylist').addEventListener('click', async () => {
+            const name = document.getElementById('playlistDropdown').textContent;
+            if (!name || name === 'Selecionar Playlist' || name === 'favorites') return showNotification('Selecione uma playlist válida para exportar!', true);
+            try {
+                const response = await fetch(`/export_playlist/${encodeURIComponent(name)}`);
+                if (!response.ok) throw new Error('Erro ao exportar playlist');
+                const playlistData = await response.json();
+                const blob = new Blob([JSON.stringify(playlistData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${name}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showNotification('Playlist exportada!', false);
+            } catch (e) {
+                showNotification(`Erro ao exportar playlist: ${e.message}`, true);
+            }
+        });
+
         document.getElementById('removePlaylist').addEventListener('click', async () => {
-            const select = document.getElementById('playlistSelect');
-            const name = select.value;
-            if (!name || name === 'favorites') return showNotification('Selecione uma playlist válida!', true);
+            const name = document.getElementById('playlistDropdown').textContent;
+            if (!name || name === 'Selecionar Playlist' || name === 'favorites') return showNotification('Selecione uma playlist válida!', true);
             if (!confirm(`Deseja remover a playlist "${name}"?`)) return;
             try {
                 const response = await fetch('/remove_playlist', {
@@ -593,9 +708,9 @@ async function loadPlaylists() {
                 const result = await response.json();
                 if (result.success) {
                     showNotification('Playlist removida!', false);
-                    select.value = '';
+                    loadSelectedPlaylist('');
                     currentFiles = [];
-                    updateFileList([]);
+                    await updateFileList([]);
                     await loadPlaylists();
                     await fetchStats();
                 } else {
@@ -607,9 +722,8 @@ async function loadPlaylists() {
         });
 
         document.getElementById('updatePlaylist').addEventListener('click', async () => {
-    const select = document.getElementById('playlistSelect');
-    const name = select.value;
-    if (!name || name === 'favorites') return showNotification('Selecione uma playlist válida!', true);
+    const name = document.getElementById('playlistDropdown').textContent;
+    if (!name || name === 'Selecionar Playlist' || name === 'favorites') return showNotification('Selecione uma playlist válida!', true);
     if (!confirm(`Deseja atualizar a playlist "${name}" com base na pasta original?`)) return;
     const spinner = document.getElementById('loadingSpinner');
     const spinnerText = document.getElementById('spinnerText');
@@ -639,9 +753,9 @@ async function loadPlaylists() {
         const result = await response.json();
         if (result.success) {
             currentFiles = result.files.map(f => ({ path: f, duration: 0 }));
-            updateFileList(currentFiles);
+            await updateFileList(currentFiles);
             await loadPlaylists();
-            select.value = name;
+            loadSelectedPlaylist(name);
             showNotification(`Playlist "${name}" atualizada com ${result.files.length} arquivos`, false);
         } else {
             showNotification(`Erro ao atualizar playlist: ${result.error}`, true);
@@ -654,13 +768,37 @@ async function loadPlaylists() {
     }
 });
 
-        document.getElementById('saveSession').addEventListener('click', async () => {
+       document.getElementById('importPlaylist').addEventListener('click', async () => {
+           const fileInput = document.getElementById('importFile');
+           const file = fileInput.files[0];
+           if (!file) return showNotification('Selecione um arquivo para importar!', true);
+           const formData = new FormData();
+           formData.append('file', file);
+           try {
+               const response = await fetch('/import_playlist', {
+                   method: 'POST',
+                   body: formData
+               });
+               const result = await response.json();
+               if (result.success) {
+                   showNotification('Playlist importada com sucesso!', false);
+                   await loadPlaylists();
+                   await fetchStats();
+               } else {
+                   showNotification(`Erro ao importar playlist: ${result.error}`, true);
+               }
+           } catch (e) {
+               showNotification(`Erro ao importar playlist: ${e.message}`, true);
+           }
+       });
+
+       document.getElementById('saveSession').addEventListener('click', async () => {
             const videos = Array.from(videoContainers).map((container, index) => {
                 const source = document.getElementById(`source${index + 1}`);
                 return source.src ? decodeURIComponent(source.src.split('/video/')[1]) : null;
             }).filter(v => v);
             if (videos.length === 0) return showNotification('Nenhum vídeo selecionado!', true);
-            const playlistName = document.getElementById('playlistSelect').value || 'Sem Playlist';
+            const playlistName = document.getElementById('playlistDropdown').textContent === 'Selecionar Playlist' ? 'Sem Playlist' : document.getElementById('playlistDropdown').textContent;
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const name = `${timestamp}_${playlistName}`;
             try {
@@ -840,24 +978,56 @@ async function loadPlaylists() {
             }
         });
 
-        document.getElementById('filterInput').addEventListener('input', e => {
-            const filter = e.target.value.toLowerCase();
+        function applyFilters() {
+            const nameFilter = document.getElementById('filterInput').value.toLowerCase();
+            const extensionFilter = document.getElementById('extensionFilter').value;
+            const sizeMin = parseFloat(document.getElementById('sizeMin').value) || 0;
+            const sizeMax = parseFloat(document.getElementById('sizeMax').value) || Infinity;
+            const dateFrom = document.getElementById('dateFrom').value ? new Date(document.getElementById('dateFrom').value) : null;
+            const dateTo = document.getElementById('dateTo').value ? new Date(document.getElementById('dateTo').value) : null;
             document.querySelectorAll('#fileList li').forEach(item => {
-                item.style.display = item.textContent.toLowerCase().includes(filter) ? '' : 'none';
+                const text = item.textContent.toLowerCase();
+                const ext = item.dataset.extension;
+                const size = parseFloat(item.dataset.size) / (1024*1024) || 0; // MB
+                const modified = item.dataset.modified ? new Date(item.dataset.modified) : null;
+                const show = text.includes(nameFilter) &&
+                            (!extensionFilter || ext === extensionFilter) &&
+                            size >= sizeMin && size <= sizeMax &&
+                            (!dateFrom || (modified && modified >= dateFrom)) &&
+                            (!dateTo || (modified && modified <= dateTo));
+                item.style.display = show ? '' : 'none';
+            });
+        }
+
+        document.getElementById('filterInput').addEventListener('input', applyFilters);
+        document.getElementById('extensionFilter').addEventListener('change', applyFilters);
+        document.getElementById('sizeMin').addEventListener('input', applyFilters);
+        document.getElementById('sizeMax').addEventListener('input', applyFilters);
+        document.getElementById('dateFrom').addEventListener('change', applyFilters);
+        document.getElementById('dateTo').addEventListener('change', applyFilters);
+        document.getElementById('searchInput').addEventListener('input', e => {
+            const search = e.target.value.toLowerCase();
+            document.querySelectorAll('#fileList li').forEach(item => {
+                item.style.display = item.textContent.toLowerCase().includes(search) ? '' : 'none';
             });
         });
 
         document.getElementById('sortSelect').addEventListener('change', e => {
             const files = Array.from(document.querySelectorAll('#fileList li')).map(li => ({
                 path: li.dataset.path,
-                text: li.textContent
+                text: li.textContent,
+                size: li.dataset.size || 0,
+                modified: li.dataset.modified || '',
+                extension: li.dataset.extension || ''
             }));
-            if (e.target.value === 'name') {
-                files.sort((a, b) => a.text.localeCompare(b.text));
-            } else {
-                files.sort((a, b) => a.path.localeCompare(b.path));
+            const [field, order] = e.target.value.split('-');
+            if (field === 'name') {
+                files.sort((a, b) => order === 'asc' ? a.text.localeCompare(b.text) : b.text.localeCompare(a.text));
+            } else if (field === 'date') {
+                files.sort((a, b) => order === 'asc' ? new Date(a.modified) - new Date(b.modified) : new Date(b.modified) - new Date(a.modified));
             }
-            updateFileList(files.map(f => ({ path: f.path })));
+            updateFileList(files.map(f => ({ path: f.path, size: f.size, modified: f.modified, extension: f.extension })));
+            applyFilters();
         });
 
         async function fetchVideoFile(filePath) {
@@ -872,19 +1042,58 @@ async function loadPlaylists() {
             }
         }
 
-        function updateFileList(files) {
+        async function generateThumbnail(filePath) {
+            const cacheKey = 'thumb_' + filePath;
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) return cached;
+            const video = document.createElement('video');
+            video.src = `/video/${encodeURIComponent(filePath)}`;
+            video.preload = 'metadata';
+            video.muted = true;
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    video.currentTime = 0;
+                };
+                video.onseeked = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 100;
+                    canvas.height = 60;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const dataURL = canvas.toDataURL('image/jpeg', 0.8);
+                    localStorage.setItem(cacheKey, dataURL);
+                    resolve(dataURL);
+                };
+                video.onerror = () => resolve(null);
+                setTimeout(() => resolve(null), 5000);
+            });
+        }
+
+        async function updateFileList(files) {
             const list = document.getElementById('fileList');
             list.innerHTML = '';
             if (files && files.length > 0) {
-                files.forEach(file => {
+                let thumbs = [];
+                if (document.getElementById('thumbnailCheckbox').checked) {
+                    const thumbPromises = files.map(file => generateThumbnail(file.path || file));
+                    thumbs = await Promise.all(thumbPromises);
+                }
+                files.forEach((file, index) => {
                     const path = file.path || file;
                     const li = document.createElement('li');
                     li.className = 'list-group-item draggable d-flex align-items-center';
                     li.draggable = true;
                     li.dataset.path = path;
+                    li.dataset.size = file.size || 0;
+                    li.dataset.modified = file.modified || '';
+                    li.dataset.extension = file.extension || path.split('.').pop().toLowerCase();
                     const isFavorite = favorites.includes(path);
+                    const thumb = thumbs[index];
+                    const thumbHtml = thumb ? `<img src="${thumb}" width="50" height="30" style="margin-right:5px;" />` : '';
                     li.innerHTML = `
+                        <input type="checkbox" class="file-checkbox me-2" data-path="${path}">
                         <i class="${isFavorite ? 'bi-star-fill text-warning' : 'bi-star'} favorite-btn"></i>
+                        ${thumbHtml}
                         <span>${path.split(/[\\/]/).pop()}</span>
                         ${playedVideos.has(path) ? '<i class="bi bi-check-circle played-indicator text-success"></i>' : ''}
                     `;
@@ -892,12 +1101,27 @@ async function loadPlaylists() {
                     li.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', path));
                     list.appendChild(li);
                 });
+                // Populate extension filter
+                const extensions = new Set();
+                files.forEach(file => {
+                    const ext = (file.extension || (file.path || file).split('.').pop().toLowerCase());
+                    extensions.add(ext);
+                });
+                const select = document.getElementById('extensionFilter');
+                select.innerHTML = '<option value="">All Extensions</option>';
+                extensions.forEach(ext => {
+                    const option = document.createElement('option');
+                    option.value = ext;
+                    option.textContent = ext.toUpperCase();
+                    select.appendChild(option);
+                });
             } else {
                 const li = document.createElement('li');
                 li.className = 'list-group-item';
                 li.textContent = 'Nenhum arquivo encontrado';
                 list.appendChild(li);
             }
+            applyFilters();
         }
 
         videoContainers.forEach((container, index) => {
@@ -926,6 +1150,8 @@ async function loadPlaylists() {
             });
 
             player.parentElement.addEventListener('dragover', e => e.preventDefault());
+
+            player.addEventListener('click', () => activePlayer = player);
 
             player.addEventListener('dblclick', () => {
                 if (player.requestFullscreen) player.requestFullscreen();
@@ -974,10 +1200,100 @@ async function loadPlaylists() {
             speedSelect.addEventListener('change', () => {
                 player.playbackRate = parseFloat(speedSelect.value);
             });
+
+            const loopCheckbox = document.getElementById(`loop${index + 1}`);
+            loopCheckbox.addEventListener('change', () => {
+                player.loop = loopCheckbox.checked;
+            });
+
+            player.addEventListener('ended', () => {
+                if (!player.loop) {
+                    shufflePlayer(index);
+                }
+            });
         });
 
-        document.getElementById('playlistSelect').addEventListener('change', loadSelectedPlaylist);
-        document.getElementById('sessionSelect').addEventListener('change', loadSelectedSession);
+        // Batch operations
+        function getSelectedFiles() {
+            const checkboxes = document.querySelectorAll('#fileList .file-checkbox:checked');
+            return Array.from(checkboxes).map(cb => cb.dataset.path);
+        }
+
+        async function batchToggleFavorites() {
+            const selectedFiles = getSelectedFiles();
+            if (selectedFiles.length === 0) {
+                showNotification('Nenhum arquivo selecionado!', true);
+                return;
+            }
+            // For simplicity, assume toggle: if any is favorite, remove all, else add all
+            const anyFavorite = selectedFiles.some(f => favorites.includes(f));
+            try {
+                const response = await fetch('/favorites', {
+                    method: anyFavorite ? 'DELETE' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_paths: selectedFiles })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    if (anyFavorite) {
+                        favorites = favorites.filter(f => !selectedFiles.includes(f));
+                        showNotification('Removidos dos favoritos', false);
+                    } else {
+                        favorites.push(...selectedFiles);
+                        showNotification('Adicionados aos favoritos', false);
+                    }
+                    await updateFileList(currentFiles);
+                    updateFavoriteIcons();
+                } else {
+                    showNotification(`Erro: ${result.error}`, true);
+                }
+            } catch (e) {
+                showNotification(`Erro: ${e.message}`, true);
+            }
+        }
+
+        async function batchRemoveFromPlaylist() {
+            const selectedFiles = getSelectedFiles();
+            if (selectedFiles.length === 0) {
+                showNotification('Nenhum arquivo selecionado!', true);
+                return;
+            }
+            const playlistName = document.getElementById('playlistDropdown').textContent;
+            if (!playlistName || playlistName === 'Selecionar Playlist' || playlistName === 'favorites') {
+                showNotification('Selecione uma playlist válida!', true);
+                return;
+            }
+            try {
+                const response = await fetch('/remove_from_playlist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: playlistName, files: selectedFiles })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    currentFiles = currentFiles.filter(f => !selectedFiles.includes(f.path || f));
+                    await updateFileList(currentFiles);
+                    showNotification('Arquivos removidos da playlist', false);
+                } else {
+                    showNotification(`Erro: ${result.error}`, true);
+                }
+            } catch (e) {
+                showNotification(`Erro: ${e.message}`, true);
+            }
+        }
+
+        document.getElementById('batchFavorites').addEventListener('click', batchToggleFavorites);
+        document.getElementById('batchRemovePlaylist').addEventListener('click', batchRemoveFromPlaylist);
+
+        // Submenu toggle
+        document.querySelectorAll('.dropdown-submenu .dropdown-toggle').forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const submenu = this.nextElementSibling;
+                submenu.classList.toggle('show');
+            });
+        });
 
         loadPlaylists();
         loadSessions();

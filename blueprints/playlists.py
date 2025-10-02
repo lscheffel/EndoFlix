@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 from pathlib import Path
 import json
 import logging
+import csv
+from io import StringIO
 from flask_login import login_required
 from db import Database
 from utils import get_media_files
@@ -147,3 +149,98 @@ def update_playlist():
             except Exception as e:
                 logging.error(f"Erro ao atualizar playlist: {e}")
                 return jsonify({'success': False, 'error': str(e)}), 500
+
+@playlists_bp.route('/export_playlist/<name>', methods=['GET'])
+@login_required
+def export_playlist(name):
+    with DB_POOL.get_connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute("SELECT files, play_count, source_folder FROM endoflix_playlist WHERE name = %s AND is_temp = FALSE", (name,))
+                result = cur.fetchone()
+                if not result:
+                    return jsonify({'error': 'Playlist not found'}), 404
+                files, play_count, source_folder = result
+                playlist_data = {
+                    'name': name,
+                    'files': files,
+                    'play_count': play_count,
+                    'source_folder': source_folder
+                }
+                return jsonify(playlist_data)
+            except Exception as e:
+                logging.error(f"Erro ao exportar playlist: {str(e)}")
+                return jsonify({'error': str(e)}), 500
+
+@playlists_bp.route('/remove_from_playlist', methods=['POST'])
+@login_required
+def remove_from_playlist():
+    with DB_POOL.get_connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                data = request.get_json()
+                name = data.get('name')
+                files_to_remove = data.get('files')
+                if not name or not isinstance(name, str) or name.strip() == '':
+                    return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
+                if not files_to_remove or not isinstance(files_to_remove, list):
+                    return jsonify({'success': False, 'error': 'Lista de arquivos a remover é obrigatória'}), 400
+                cur.execute("SELECT files FROM endoflix_playlist WHERE name = %s AND is_temp = FALSE", (name.strip(),))
+                result = cur.fetchone()
+                if not result:
+                    return jsonify({'success': False, 'error': 'Playlist não encontrada'}), 404
+                current_files = result[0]
+                updated_files = [f for f in current_files if f not in files_to_remove]
+                cur.execute("UPDATE endoflix_playlist SET files = %s WHERE name = %s AND is_temp = FALSE", (updated_files, name.strip()))
+                conn.commit()
+                return jsonify({'success': True, 'files': updated_files})
+            except Exception as e:
+                conn.rollback()
+                logging.error(f"Erro ao remover arquivos da playlist: {str(e)}")
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+@playlists_bp.route('/import_playlist', methods=['POST'])
+@login_required
+def import_playlist():
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'success': False, 'error': 'Arquivo não fornecido'}), 400
+
+    filename = file.filename.lower() if file.filename else ''
+    if not (filename.endswith('.json') or filename.endswith('.csv')):
+        return jsonify({'success': False, 'error': 'Arquivo deve ser .json ou .csv'}), 400
+
+    try:
+        content = file.read().decode('utf-8')
+        name = None
+        files = None
+        source_folder = ''
+        play_count = 0
+        if filename.endswith('.json'):
+            data = json.loads(content)
+            name = data.get('name')
+            files = data.get('files', [])
+            source_folder = data.get('source_folder', '')
+            play_count = data.get('play_count', 0)
+        elif filename.endswith('.csv'):
+            reader = csv.DictReader(StringIO(content))
+            row = next(reader)  # Assume one row
+            name = row.get('name')
+            files = [f.strip() for f in row.get('files', '').split(',') if f.strip()]
+            source_folder = row.get('source_folder', '')
+            play_count = int(row.get('play_count', 0))
+
+        if not name or not files:
+            return jsonify({'success': False, 'error': 'Dados inválidos no arquivo'}), 400
+
+        with DB_POOL.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO endoflix_playlist (name, files, play_count, source_folder) VALUES (%s, %s, %s, %s) ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files, play_count = EXCLUDED.play_count, source_folder = EXCLUDED.source_folder",
+                    (name, files, play_count, source_folder)
+                )
+                conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        logging.error(f"Erro ao importar playlist: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500

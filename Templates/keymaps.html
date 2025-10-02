@@ -14,6 +14,19 @@
     </style>
 </head>
 <body>
+    <header class="p-2 bg-secondary d-flex justify-content-between">
+        <h1 class="h5 m-0">EndoFlix - Video Player <span id="stats"></span></h1>
+        <div>
+            <input type="text" id="searchInput" class="form-control me-2" placeholder="Search videos" style="width: 200px;">
+<i class="bi bi-lightbulb theme-toggle me-2" id="themeToggle"></i>
+            <a href="/keymaps" class="text-light me-2">Keymaps</a>
+            <a href="/about" class="text-light me-2">Sobre</a>
+            <a href="/ultra" class="text-light me-2">Ultra Mode</a>
+            <a href="{{ url_for('auth.logout') }}" class="text-light">
+                <i class="bi bi-box-arrow-right"></i> Logout
+            </a>
+        </div>
+    </header>
     <div class="container">
         <a href="/" class="btn btn-primary btn-back"><i class="bi bi-arrow-left"></i> Voltar</a>
         <h1 class="h3 mb-4">Keymaps do EndoFlick</h1>

@@ -62,11 +62,30 @@ document.addEventListener('keydown', e => {
         });
         showNotification(allMuted ? 'Som ativado!' : 'Som desativado!', false);
     } else if (e.key === 'p' || e.key === 'P') {
+        let anyPlaying = false;
         videoContainers.forEach(container => {
             const player = container.querySelector('.video-player');
-            if (!player.paused) player.pause();
+            if (!player.paused) anyPlaying = true;
         });
-        showNotification('Todos os players pausados!', false);
+        if (anyPlaying) {
+            videoContainers.forEach(container => {
+                const player = container.querySelector('.video-player');
+                if (!player.paused) player.pause();
+            });
+            showNotification('Todos os players pausados!', false);
+        } else {
+            videoContainers.forEach(container => {
+                const player = container.querySelector('.video-player');
+                const source = container.querySelector('source');
+                if (source.src && player.paused) {
+                    player.play().catch(err => {
+                        console.error(`Erro ao tocar player ${player.id}:`, err);
+                        showNotification(`Erro ao tocar ${player.id}!`, true);
+                    });
+                }
+            });
+            showNotification('Todos os players tocando!', false);
+        }
     } else if (e.key === 'o' || e.key === 'O') {
         videoContainers.forEach(container => {
             const player = container.querySelector('.video-player');
@@ -79,6 +98,8 @@ document.addEventListener('keydown', e => {
             }
         });
         showNotification('Todos os players tocando!', false);
+    } else if (e.key === 'n' || e.key === 'N') {
+        document.getElementById('wishMeLuck').click();
     } else if (e.key === "'") {
         document.getElementById('panicBtn').click();
     } else if (e.key === 'c' || e.key === 'C') {
@@ -114,6 +135,19 @@ document.addEventListener('keydown', e => {
             toggleFavorite(file);
         } else {
             showNotification('Nenhum vídeo no player 4!', true);
+        }
+    } else if (e.key === 'f' || e.key === 'F') {
+        if (activePlayer) {
+            if (activePlayer.requestFullscreen) {
+                activePlayer.requestFullscreen();
+            } else if (activePlayer.webkitRequestFullscreen) {
+                activePlayer.webkitRequestFullscreen();
+            } else if (activePlayer.msRequestFullscreen) {
+                activePlayer.msRequestFullscreen();
+            }
+            showNotification('Player ativo em tela cheia!', false);
+        } else {
+            showNotification('Nenhum player ativo!', true);
         }
     }
 });

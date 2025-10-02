@@ -17,14 +17,16 @@
 </head>
 <body class="bg-dark text-light">
     <header class="p-2 bg-secondary d-flex justify-content-between">
-        <h1 class="h5 m-0">EndoFlick - Sobre</h1>
+        <h1 class="h5 m-0">EndoFlix - Video Player <span id="stats"></span></h1>
         <div>
-            <label for="themeToggle" class="me-2">
-                <input type="checkbox" id="themeToggle" class="me-1">
-                <i class="bi bi-lightbulb"></i>
-            </label>
-            <a href="/" class="text-light me-2">Home</a>
-            <a href="/ultra" class="text-light">Ultra Mode</a>
+            <input type="text" id="searchInput" class="form-control me-2" placeholder="Search videos" style="width: 200px;">
+<i class="bi bi-lightbulb theme-toggle me-2" id="themeToggle"></i>
+            <a href="/keymaps" class="text-light me-2">Keymaps</a>
+            <a href="/about" class="text-light me-2">Sobre</a>
+            <a href="/ultra" class="text-light me-2">Ultra Mode</a>
+            <a href="{{ url_for('auth.logout') }}" class="text-light">
+                <i class="bi bi-box-arrow-right"></i> Logout
+            </a>
         </div>
     </header>
     <div class="content">
@@ -56,6 +58,15 @@
                 </li>
                 <li><strong>Botão de Pânico:</strong> Abre um site aleatório (ex.: Google, YouTube) em caso de emergência.</li>
                 <li><strong>Logs Detalhados:</strong> Debug facilitado com logs no backend e frontend.</li>
+                <li><strong>Busca em Tempo Real:</strong> Permite pesquisa instantânea na lista de vídeos conforme você digita.</li>
+                <li><strong>Atalhos de Teclado Expandidos:</strong> Mais atalhos de teclado para navegação e controle eficientes.</li>
+                <li><strong>Exportar/Importar Playlists:</strong> Capacidade de exportar playlists para arquivos e importá-las de volta.</li>
+                <li><strong>Filtros Melhorados:</strong> Opções de filtragem aprimoradas para melhor organização dos vídeos.</li>
+                <li><strong>Alternâncias de Loop:</strong> Opções para repetir vídeos individuais ou playlists.</li>
+                <li><strong>Histórico de Playlists Recentes:</strong> Acesso a playlists usadas recentemente.</li>
+                <li><strong>Miniaturas:</strong> Exibição de miniaturas de vídeo para identificação rápida.</li>
+                <li><strong>Operações em Lote:</strong> Execute ações em vários vídeos de uma vez.</li>
+                <li><strong>Cabeçalhos Unificados:</strong> Design consistente de cabeçalho em toda a aplicação.</li>
             </ul>
         </div>
         <div class="readme-section">
