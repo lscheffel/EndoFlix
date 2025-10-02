@@ -42,8 +42,8 @@ REDIS_PROCESS = None
 DB_POOL = Database()  # Updated to use new Database class
 
 # Flask-Login setup
-login_manager.init_app(app)
 login_manager.login_view = 'auth.login'
+login_manager.init_app(app)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -117,7 +117,8 @@ def signal_handler(sig, frame):
     shutdown_redis()
     DB_POOL.closeall()
     sys.exit(0)
-    signal.signal(signal.SIGINT, signal_handler)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 
 
