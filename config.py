@@ -30,6 +30,7 @@ class Config:
 
     # Paths
     FFPROBE_PATH: str = r"C:\Program Files\FFMPEG\bin\ffprobe.exe"
+    FFMPEG_PATH: str = r"C:\Program Files\FFMPEG\bin\ffmpeg.exe"
     REDIS_SERVER_PATH: str = r"C:\Program Files\Redis\redis-server.exe"
     TRANSCODE_DIR: Path = Path("transcode")
 
@@ -38,4 +39,11 @@ class Config:
     SNAPSHOT_WORKERS: int = 6
     CHUNK_SIZE: int = 4096  # Para leitura de arquivos
     BATCH_SIZE: int = 100   # Para processamento em lote
-    QUEUE_MAX_SIZE: int = 1000  # Para backpressure 
+    QUEUE_MAX_SIZE: int = 1000  # Para backpressure
+
+    # Thumbnails
+    THUMB_SIZE: int = 50
+    THUMB_FORMAT: str = 'webp'
+    THUMB_QUALITY: int = 80  # For WebP
+    THUMB_EXTRACTION_POINT: float = 0.1  # 10% into video
+    THUMB_WORKERS: int = 4
