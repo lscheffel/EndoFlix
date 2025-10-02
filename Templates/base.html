@@ -980,6 +980,7 @@ async function loadPlaylists() {
 
         function applyFilters() {
             const nameFilter = document.getElementById('filterInput').value.toLowerCase();
+            const search = document.getElementById('searchInput').value.toLowerCase();
             const extensionFilter = document.getElementById('extensionFilter').value;
             const sizeMin = parseFloat(document.getElementById('sizeMin').value) || 0;
             const sizeMax = parseFloat(document.getElementById('sizeMax').value) || Infinity;
@@ -991,6 +992,7 @@ async function loadPlaylists() {
                 const size = parseFloat(item.dataset.size) / (1024*1024) || 0; // MB
                 const modified = item.dataset.modified ? new Date(item.dataset.modified) : null;
                 const show = text.includes(nameFilter) &&
+                            text.includes(search) &&
                             (!extensionFilter || ext === extensionFilter) &&
                             size >= sizeMin && size <= sizeMax &&
                             (!dateFrom || (modified && modified >= dateFrom)) &&
@@ -1005,12 +1007,7 @@ async function loadPlaylists() {
         document.getElementById('sizeMax').addEventListener('input', applyFilters);
         document.getElementById('dateFrom').addEventListener('change', applyFilters);
         document.getElementById('dateTo').addEventListener('change', applyFilters);
-        document.getElementById('searchInput').addEventListener('input', e => {
-            const search = e.target.value.toLowerCase();
-            document.querySelectorAll('#fileList li').forEach(item => {
-                item.style.display = item.textContent.toLowerCase().includes(search) ? '' : 'none';
-            });
-        });
+        document.getElementById('searchInput').addEventListener('input', applyFilters);
 
         document.getElementById('sortSelect').addEventListener('change', e => {
             const files = Array.from(document.querySelectorAll('#fileList li')).map(li => ({
@@ -1046,6 +1043,7 @@ async function loadPlaylists() {
             const cacheKey = 'thumb_' + filePath;
             const cached = localStorage.getItem(cacheKey);
             if (cached) return cached;
+            console.log('Generating thumbnail for', filePath);
             const video = document.createElement('video');
             video.src = `/video/${encodeURIComponent(filePath)}`;
             video.preload = 'metadata';
@@ -1062,10 +1060,17 @@ async function loadPlaylists() {
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                     const dataURL = canvas.toDataURL('image/jpeg', 0.8);
                     localStorage.setItem(cacheKey, dataURL);
+                    console.log('Thumbnail generated for', filePath, 'success');
                     resolve(dataURL);
                 };
-                video.onerror = () => resolve(null);
-                setTimeout(() => resolve(null), 5000);
+                video.onerror = () => {
+                    console.log('Thumbnail failed for', filePath, 'error');
+                    resolve(null);
+                };
+                setTimeout(() => {
+                    console.log('Thumbnail timed out for', filePath);
+                    resolve(null);
+                }, 5000);
             });
         }
 
@@ -1075,6 +1080,7 @@ async function loadPlaylists() {
             if (files && files.length > 0) {
                 let thumbs = [];
                 if (document.getElementById('thumbnailCheckbox').checked) {
+                    console.log('Generating thumbs for', files.length, 'files');
                     const thumbPromises = files.map(file => generateThumbnail(file.path || file));
                     thumbs = await Promise.all(thumbPromises);
                 }
@@ -1293,6 +1299,12 @@ async function loadPlaylists() {
                 const submenu = this.nextElementSibling;
                 submenu.classList.toggle('show');
             });
+        });
+
+        // Thumbnail checkbox change
+        document.getElementById('thumbnailCheckbox').addEventListener('change', async () => {
+            console.log('Thumbnail checkbox changed to:', document.getElementById('thumbnailCheckbox').checked);
+            await updateFileList(currentFiles);
         });
 
         loadPlaylists();
