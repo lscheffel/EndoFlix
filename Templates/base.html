@@ -64,7 +64,6 @@
     <header class="p-2 bg-secondary d-flex justify-content-between">
         <h1 class="h5 m-0">EndoFlix - Video Player <span id="stats"></span></h1>
         <div>
-            <input type="text" id="searchInput" class="form-control me-2" placeholder="Search videos" style="width: 200px;">
 <i class="bi bi-lightbulb theme-toggle me-2" id="themeToggle"></i>
             <a href="/keymaps" class="text-light me-2">Keymaps</a>
             <a href="/about" class="text-light me-2">Sobre</a>
@@ -259,6 +258,7 @@
                     <button id="batchFavorites" class="btn btn-warning compact-btn">Add/Remove Favorites</button>
                     <button id="batchRemovePlaylist" class="btn btn-danger compact-btn">Remove from Playlist</button>
                 </div>
+                <input type="text" id="searchInput" class="form-control compact-control" placeholder="Search videos">
                 <ul id="fileList" class="list-group compact-control" style="max-height: 50vh; overflow-y: auto;"></ul>
                 <div class="btn-row">
                     <button id="clearDeck" class="btn btn-warning compact-btn">Clear</button>
