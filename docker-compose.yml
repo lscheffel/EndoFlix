@@ -1,54 +1,156 @@
 version: '3.8'
 
+networks:
+  endoflix:
+    driver: bridge
+
 services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: videos
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    secrets:
+      - postgres_password
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - endoflix
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   redis:
     image: redis:7-alpine
-    command: redis-server --save 60 1
+    command: redis-server --save 60 1 --loglevel warning
     volumes:
-      - redis_data:/data
+      - redis_prod_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - endoflix
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
   endoflix:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "5000:5000"
     environment:
-      SECRET_KEY: endoFlix_secret_key_2024
-      DB_NAME: videos
-      DB_USER: postgres
-      DB_PASSWORD: admin
-      DB_HOST: postgres
-      DB_PORT: 5432
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: 0
+      SECRET_KEY: ${SECRET_KEY}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_DB: ${REDIS_DB}
+      LOG_LEVEL: ${LOG_LEVEL}
+      MAX_WORKERS: ${MAX_WORKERS}
+      SNAPSHOT_WORKERS: ${SNAPSHOT_WORKERS}
+      THUMB_WORKERS: ${THUMB_WORKERS}
+      FFMPEG_TIMEOUT: ${FFMPEG_TIMEOUT}
+      FLASK_ENV: ${FLASK_ENV}
+    secrets:
+      - db_password
+      - redis_password
     volumes:
-      - ./videos:/app/videos
-      - ./logs:/app/logs
+      - videos_data:/app/videos
+      - logs_data:/app/logs
+      - transcode_data:/app/transcode
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - endoflix
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Database backup service
+  db-backup:
+    image: postgres:15-alpine
+    command: |
+      sh -c "
+        while true; do
+          pg_dump -h postgres -U ${DB_USER} ${DB_NAME} > /backup/backup_$$(date +%%Y%%m%%d_%%H%%M%%S).sql
+          find /backup -name '*.sql' -type f -mtime +7 -delete
+          sleep 86400
+        done
+      "
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - backup_data:/backup
+    depends_on:
+      - postgres
+    networks:
+      - endoflix
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 128M
+
+secrets:
+  postgres_password:
+    external: true
+  db_password:
+    external: true
+  redis_password:
+    external: true
 
 volumes:
-  postgres_data:
-  redis_data:
+  postgres_prod_data:
+    driver: local
+  redis_prod_data:
+    driver: local
+  videos_data:
+    driver: local
+  logs_data:
+    driver: local
+  transcode_data:
+    driver: local
+  backup_data:
+    driver: local

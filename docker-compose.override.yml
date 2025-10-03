@@ -1,0 +1,54 @@
+version: '3.8'
+
+# Production overrides - copy this file to docker-compose.prod.yml and customize
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: ${DB_NAME:-videos_prod}
+      POSTGRES_USER: ${DB_USER:-postgres}
+    secrets:
+      - source: postgres_password
+        target: POSTGRES_PASSWORD
+
+  endoflix:
+    environment:
+      FLASK_ENV: production
+      LOG_LEVEL: INFO
+    secrets:
+      - source: db_password
+        target: DB_PASSWORD
+      - source: redis_password
+        target: REDIS_PASSWORD
+
+  # Monitoring service (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - endoflix
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - endoflix
+
+volumes:
+  grafana_data:
+    driver: local
