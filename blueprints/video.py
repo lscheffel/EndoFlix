@@ -9,11 +9,15 @@ from flask_login import login_required
 from db import Database
 from config import Config
 from utils import process_file, index_file
+from prometheus_flask_exporter import Counter
 
 DB_POOL = Database()  # Create database instance
 TRANSCODE_DIR = Config.TRANSCODE_DIR
 
 video_bp = Blueprint('video', __name__)
+
+# Prometheus counter for video views
+video_views_counter = Counter('video_views', 'Number of video views')
 
 @video_bp.route('/video/<path:filename>')
 @login_required
@@ -51,6 +55,9 @@ def serve_video_range(input_path):
             except Exception as e:
                 conn.rollback()
                 logging.error(f"Erro ao atualizar visualizações para {input_path_str}: {e}")
+
+    # Increment Prometheus counter
+    video_views_counter.inc()
 
     return Response(
         data,

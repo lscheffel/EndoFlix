@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor
+from functools import lru_cache
 from db import Database
 from config import Config
 from cache import RedisCache
@@ -38,7 +39,8 @@ def calculate_hash(file_path, max_bytes=2*1024*1024):  # 2MB início + 2MB meio
                 bytes_read += len(byte_block)
     return sha256_hash.hexdigest()
 
-def get_video_metadata(file_path):
+@lru_cache(maxsize=10000)
+def get_video_metadata_cached(file_path, file_size, mtime):
     file_path_str = str(file_path)
     # Try cache first
     cached = REDIS_CLIENT.get(f"metadata:{file_path_str}")
@@ -65,31 +67,42 @@ def get_video_metadata(file_path):
             except Exception as e:
                 logging.error(f"Erro ao consultar metadados no banco para {file_path_str}: {e}")
 
-    try:
-        cmd = [FFPROBE_PATH, "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,duration", "-of", "json", file_path_str]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        metadata = json.loads(result.stdout)
-        streams = metadata.get("streams", [])
-        video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
+    cmd = [FFPROBE_PATH, "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,duration", "-of", "json", file_path_str]
+    result = subprocess.run(cmd, capture_output=True, text=False)
+    if result.returncode == 0:
+        stdout_text = result.stdout.decode('utf-8', errors='replace')
+        try:
+            metadata = json.loads(stdout_text)
+            streams = metadata.get("streams", [])
+            video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
 
-        duration = float(video_stream.get("duration", 0))
-        width = video_stream.get("width", 0)
-        height = video_stream.get("height", 0)
-        resolution = f"{width}x{height}" if width and height else "unknown"
-        orientation = "portrait" if width < height else "landscape" if width > height else "square"
-        video_codec = video_stream.get("codec_name", "unknown")
+            duration = float(video_stream.get("duration", 0))
+            width = video_stream.get("width", 0)
+            height = video_stream.get("height", 0)
+            resolution = f"{width}x{height}" if width and height else "unknown"
+            orientation = "portrait" if width < height else "landscape" if width > height else "square"
+            video_codec = video_stream.get("codec_name", "unknown")
 
-        result = {
-            "duration_seconds": duration,
-            "resolution": resolution,
-            "orientation": orientation,
-            "video_codec": video_codec
-        }
-        # Cache the result
-        REDIS_CLIENT.set(f"metadata:{file_path_str}", json.dumps(result), ttl=86400)
-        return result
-    except Exception as e:
-        logging.error(f"Erro ao extrair metadados de {file_path_str}: {e}")
+            result = {
+                "duration_seconds": duration,
+                "resolution": resolution,
+                "orientation": orientation,
+                "video_codec": video_codec
+            }
+            # Cache the result
+            REDIS_CLIENT.set(f"metadata:{file_path_str}", json.dumps(result), ttl=86400)
+            return result
+        except (json.JSONDecodeError, KeyError) as e:
+            logging.error(f"Failed to parse ffprobe output for {file_path_str}: {e}")
+            return {
+                "duration_seconds": 0,
+                "resolution": "unknown",
+                "orientation": "unknown",
+                "video_codec": "unknown"
+            }
+    else:
+        stderr_text = result.stderr.decode('utf-8', errors='replace') if result.stderr else 'Unknown error'
+        logging.error(f"ffprobe failed for {file_path_str}: {stderr_text}")
         return {
             "duration_seconds": 0,
             "resolution": "unknown",
@@ -101,7 +114,7 @@ def process_file(file):
     file_path_str = str(file)
     stats = os.stat(file)
     hash_id = calculate_hash(file)
-    metadata = get_video_metadata(file)
+    metadata = get_video_metadata_cached(file_path_str, stats.st_size, stats.st_mtime)
     return {
         "hash_id": hash_id,
         "file_path": file_path_str,
@@ -144,6 +157,24 @@ def index_file(conn, file_data):
     finally:
         cur.close()
 
+def process_files_batch(new_files, conn, temp_playlist_name, total_files):
+    for chunk in [new_files[i:i+100] for i in range(0, len(new_files), 100)]:
+        with ProcessPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(process_file, file): (i, file) for i, file in chunk}
+            for future in futures:
+                i, file = futures[future]
+                file_data = future.result()
+                media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"], "size": file_data["size_bytes"], "modified": file_data["modified_at"].isoformat() if file_data["modified_at"] else None, "extension": Path(file_data["file_path"]).suffix.lower()[1:]}
+                index_file(conn, file_data)
+                yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': total_files})}\n\n"
+                # Add to playlist
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE endoflix_playlist SET files = array_append(files, %s) WHERE name = %s",
+                        (str(file), temp_playlist_name)
+                    )
+                    conn.commit()
+
 def get_media_files(folder):
     folder_path = Path(folder)
     if not folder_path.exists() or not folder_path.is_dir():
@@ -179,6 +210,7 @@ def get_media_files(folder):
             conn.commit()
 
         yield f"data: {json.dumps({'status': 'start', 'total': len(files_to_process), 'temp_playlist': temp_playlist_name})}\n\n"
+        new_files = []
         for i, file in enumerate(files_to_process, 1):
             try:
                 hash_id = calculate_hash(file)
@@ -206,7 +238,7 @@ def get_media_files(folder):
                         "last_viewed_at": result[9],
                         "is_favorite": result[10]
                     }
-                    media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
+                    media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"], "size": file_data["size_bytes"], "modified": file_data["modified_at"].isoformat() if file_data["modified_at"] else None, "extension": Path(file_data["file_path"]).suffix.lower()[1:]}
                     yield f"data: {json.dumps({'status': 'skipped', 'file': media_item, 'progress': i, 'total': len(files_to_process), 'message': 'Arquivo já indexado'})}\n\n"
                 else:
                     # Verificar se é um arquivo movido (mesmo hash, outro caminho)
@@ -244,12 +276,7 @@ def get_media_files(folder):
                             yield f"data: {json.dumps({'status': 'skipped', 'file': media_item, 'progress': i, 'total': len(files_to_process), 'message': 'Arquivo movido e atualizado'})}\n\n"
                     if not media_item:
                         # Arquivo novo, processar
-                        with ProcessPoolExecutor(max_workers=8) as executor:
-                            future = executor.submit(process_file, file)
-                            file_data = future.result()
-                            media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
-                            index_file(conn, file_data)
-                            yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': len(files_to_process)})}\n\n"
+                        new_files.append((i, file))
                 # Adicionar arquivo à playlist temporária
                 with conn.cursor() as cur:
                     cur.execute(
@@ -260,4 +287,8 @@ def get_media_files(folder):
             except Exception as e:
                 logging.error(f"Erro ao processar {file}: {e}")
                 yield f"data: {json.dumps({'status': 'error', 'file': str(file), 'message': str(e)})}\n\n"
-    yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_process), 'temp_playlist': temp_playlist_name})}\n\n"
+        # Now process new files in batches
+        if new_files:
+            for result in process_files_batch(new_files, conn, temp_playlist_name, len(files_to_process)):
+                yield result
+        yield f"data: {json.dumps({'status': 'end', 'total': len(files_to_process), 'temp_playlist': temp_playlist_name})}\n\n"

@@ -136,6 +136,18 @@ EndoFlix/
 
 Versões
 
+v5.0.0 (2025-10-03):
+Sistema completo de autenticação e segurança.
+Sistema de favoritos para vídeos.
+Analytics e monitoramento avançado.
+Containerização com Docker e docker-compose.
+Arquitetura modular com blueprints.
+Melhorias significativas de performance e segurança.
+Pydantic para validação de dados.
+Sistema de logs estruturado em JSON.
+Integração com Redis para cache.
+CI/CD com GitHub Actions.
+
 v3.0.0 (2025-05-11):
 Refatoração completa: removeu JSON, implementou PostgreSQL.
 Corrigido gerenciamento de playlists e sessões.
