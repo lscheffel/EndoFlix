@@ -11,8 +11,6 @@ services:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-    secrets:
-      - postgres_password
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -73,15 +71,13 @@ services:
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
       REDIS_DB: ${REDIS_DB}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       LOG_LEVEL: ${LOG_LEVEL}
       MAX_WORKERS: ${MAX_WORKERS}
       SNAPSHOT_WORKERS: ${SNAPSHOT_WORKERS}
       THUMB_WORKERS: ${THUMB_WORKERS}
       FFMPEG_TIMEOUT: ${FFMPEG_TIMEOUT}
       FLASK_ENV: ${FLASK_ENV}
-    secrets:
-      - db_password
-      - redis_password
     volumes:
       - videos_data:/app/videos
       - logs_data:/app/logs
@@ -132,14 +128,6 @@ services:
         limits:
           cpus: '0.1'
           memory: 128M
-
-secrets:
-  postgres_password:
-    external: true
-  db_password:
-    external: true
-  redis_password:
-    external: true
 
 volumes:
   postgres_prod_data:

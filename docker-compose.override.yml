@@ -6,19 +6,14 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-videos_prod}
       POSTGRES_USER: ${DB_USER:-postgres}
-    secrets:
-      - source: postgres_password
-        target: POSTGRES_PASSWORD
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
 
   endoflix:
     environment:
       FLASK_ENV: production
       LOG_LEVEL: INFO
-    secrets:
-      - source: db_password
-        target: DB_PASSWORD
-      - source: redis_password
-        target: REDIS_PASSWORD
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
 
   # Monitoring service (optional)
   prometheus:

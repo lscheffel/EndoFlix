@@ -72,7 +72,7 @@ from prometheus_flask_exporter import PrometheusMetrics
 # Import auth module
 from auth import login_manager
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='Static')
 limiter.init_app(app)
 metrics = PrometheusMetrics(app)
 
@@ -122,6 +122,11 @@ def handle_api_error(error):
 def handle_exception(error):
     logging.error(traceback.format_exc())
     return jsonify(success=False, error="Internal server error"), 500
+
+# Handle 404 errors properly
+@app.errorhandler(404)
+def handle_not_found(error):
+    return jsonify(success=False, error="Not found"), 404
 
 @app.route('/version')
 def version():
@@ -212,7 +217,7 @@ def init_redis(max_retries=3, retry_delay=2):
     global REDIS_CLIENT
     for attempt in range(max_retries):
         try:
-            REDIS_CLIENT = redis.Redis(host='localhost', port=6379, db=0)
+            REDIS_CLIENT = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
             REDIS_CLIENT.ping()
             logging.info("Conexão com Redis estabelecida")
             return True
@@ -220,6 +225,9 @@ def init_redis(max_retries=3, retry_delay=2):
             logging.warning(f"Tentativa {attempt + 1}/{max_retries} de conexão ao Redis falhou: {e}")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)
+        except Exception as e:
+            logging.error(f"Erro inesperado ao conectar ao Redis: {e}")
+            break
     logging.warning("Não foi possível conectar ao Redis. Usando fallback sem cache.")
     REDIS_CLIENT = None
     return False

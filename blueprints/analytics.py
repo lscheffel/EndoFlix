@@ -17,11 +17,14 @@ def stats():
             try:
                 # Direct queries for stats
                 cur.execute("SELECT COUNT(*) FROM endoflix_files")
-                video_count = cur.fetchone()[0]
+                result = cur.fetchone()
+                video_count = result[0] if result else 0
                 cur.execute("SELECT COUNT(*) FROM endoflix_playlist WHERE is_temp = FALSE")
-                playlist_count = cur.fetchone()[0]
+                result = cur.fetchone()
+                playlist_count = result[0] if result else 0
                 cur.execute("SELECT COUNT(*) FROM endoflix_session")
-                session_count = cur.fetchone()[0]
+                result = cur.fetchone()
+                session_count = result[0] if result else 0
                 return jsonify({'videos': video_count, 'playlists': playlist_count, 'sessions': session_count})
             except Exception as e:
                 logging.error(f"Erro ao obter estatísticas: {e}")
@@ -34,11 +37,14 @@ def analytics():
         with conn.cursor() as cur:
             try:
                 cur.execute("SELECT COUNT(*) FROM endoflix_files")
-                video_count = cur.fetchone()[0] or 0
+                result = cur.fetchone()
+                video_count = result[0] if result else 0
                 cur.execute("SELECT COUNT(*) FROM endoflix_playlist")
-                playlist_count = cur.fetchone()[0] or 0
+                result = cur.fetchone()
+                playlist_count = result[0] if result else 0
                 cur.execute("SELECT COUNT(*) FROM endoflix_session")
-                session_count = cur.fetchone()[0] or 0
+                result = cur.fetchone()
+                session_count = result[0] if result else 0
 
                 cur.execute("SELECT name, files, play_count FROM endoflix_playlist")
                 playlists = [{"name": row[0], "files": row[1], "play_count": row[2]} for row in cur.fetchall()]

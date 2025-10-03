@@ -43,7 +43,7 @@ class PlaylistService:
             with conn.cursor() as cur:
                 cur.execute("SELECT files, play_count, source_folder FROM endoflix_playlist WHERE name = %s AND is_temp = FALSE", (name,))
                 result = cur.fetchone()
-                if not result:
+                if not result or len(result) != 3:
                     return None
                 files, play_count, source_folder = result
                 # Add metadata to files
@@ -52,7 +52,7 @@ class PlaylistService:
                     cur2 = conn.cursor()
                     cur2.execute("SELECT size_bytes, modified_at FROM endoflix_files WHERE file_path = %s", (f,))
                     meta_result = cur2.fetchone()
-                    if meta_result:
+                    if meta_result and len(meta_result) == 2:
                         size, modified = meta_result
                         files_with_meta.append({"path": f, "size": size, "modified": modified.isoformat() if modified else None, "extension": Path(f).suffix.lower()[1:]})
                     else:
@@ -71,7 +71,7 @@ class PlaylistService:
                     # Verify playlist exists
                     cur.execute("SELECT files, source_folder FROM endoflix_playlist WHERE name = %s AND is_temp = FALSE", (name,))
                     playlist = cur.fetchone()
-                    if not playlist:
+                    if not playlist or len(playlist) != 2:
                         raise ValueError("Playlist not found")
 
                     # Get updated files from source_folder
@@ -87,7 +87,7 @@ class PlaylistService:
                     if temp_playlist:
                         cur.execute("SELECT files FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_playlist,))
                         temp_result = cur.fetchone()
-                        if temp_result:
+                        if temp_result and len(temp_result) > 0:
                             updated_files.extend(temp_result[0])
                             # Delete temp playlist
                             cur.execute("DELETE FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_playlist,))
@@ -147,7 +147,7 @@ class PlaylistService:
                 try:
                     cur.execute("SELECT files, source_folder FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_name,))
                     result = cur.fetchone()
-                    if not result:
+                    if not result or len(result) != 2:
                         raise ValueError("Temp playlist not found")
                     files, source_folder = result
                     cur.execute(
@@ -170,7 +170,7 @@ class PlaylistService:
                 try:
                     cur.execute("SELECT files FROM endoflix_playlist WHERE name = %s AND is_temp = FALSE", (name,))
                     result = cur.fetchone()
-                    if not result:
+                    if not result or len(result) == 0:
                         raise ValueError("Playlist not found")
                     current_files = result[0]
                     updated_files = [f for f in current_files if f not in files_to_remove]

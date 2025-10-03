@@ -48,12 +48,12 @@ def get_video_metadata_cached(file_path, file_size, mtime):
         return json.loads(cached)
 
     # Query database
-    with DB_POOL.get_connection() as conn:
-        with conn.cursor() as cur:
-            try:
+    try:
+        with DB_POOL.get_connection() as conn:
+            with conn.cursor() as cur:
                 cur.execute("SELECT video_codec, resolution, orientation, duration_seconds FROM endoflix_files WHERE file_path = %s", (file_path_str,))
                 result = cur.fetchone()
-                if result:
+                if result and len(result) == 4:
                     video_codec, resolution, orientation, duration_seconds = result
                     metadata = {
                         "video_codec": video_codec,
@@ -64,8 +64,8 @@ def get_video_metadata_cached(file_path, file_size, mtime):
                     # Cache the result
                     REDIS_CLIENT.set(f"metadata:{file_path_str}", json.dumps(metadata), ttl=86400)
                     return metadata
-            except Exception as e:
-                logging.error(f"Erro ao consultar metadados no banco para {file_path_str}: {e}")
+    except Exception as e:
+        logging.error(f"Erro ao consultar metadados no banco para {file_path_str}: {e}")
 
     cmd = [FFPROBE_PATH, "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,duration", "-of", "json", file_path_str]
     result = subprocess.run(cmd, capture_output=True, text=False)
@@ -162,18 +162,30 @@ def process_files_batch(new_files, conn, temp_playlist_name, total_files):
         with ProcessPoolExecutor(max_workers=8) as executor:
             futures = {executor.submit(process_file, file): (i, file) for i, file in chunk}
             for future in futures:
-                i, file = futures[future]
-                file_data = future.result()
-                media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"], "size": file_data["size_bytes"], "modified": file_data["modified_at"].isoformat() if file_data["modified_at"] else None, "extension": Path(file_data["file_path"]).suffix.lower()[1:]}
-                index_file(conn, file_data)
-                yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': total_files})}\n\n"
-                # Add to playlist
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE endoflix_playlist SET files = array_append(files, %s) WHERE name = %s",
-                        (str(file), temp_playlist_name)
-                    )
-                    conn.commit()
+                try:
+                    i, file = futures[future]
+                    try:
+                        file_data = future.result()
+                        media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"], "size": file_data["size_bytes"], "modified": file_data["modified_at"].isoformat() if file_data["modified_at"] else None, "extension": Path(file_data["file_path"]).suffix.lower()[1:]}
+                        index_file(conn, file_data)
+                        yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': total_files})}\n\n"
+                        # Add to playlist
+                        try:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    "UPDATE endoflix_playlist SET files = array_append(files, %s) WHERE name = %s",
+                                    (str(file), temp_playlist_name)
+                                )
+                                conn.commit()
+                        except Exception as e:
+                            logging.error(f"Error updating playlist for {file}: {e}")
+                            conn.rollback()
+                    except Exception as e:
+                        logging.error(f"Error processing file {file}: {e}")
+                        continue
+                except Exception as e:
+                    logging.error(f"Error with future processing: {e}")
+                    continue
 
 def get_media_files(folder):
     folder_path = Path(folder)
@@ -222,7 +234,7 @@ def get_media_files(folder):
                         (str(file), stats.st_size)
                     )
                     result = cur.fetchone()
-                if result:
+                if result and len(result) == 11:
                     # Arquivo já indexado, usar dados do DB
                     file_data = {
                         "hash_id": hash_id,
@@ -245,7 +257,7 @@ def get_media_files(folder):
                     with conn.cursor() as cur:
                         cur.execute("SELECT file_path FROM endoflix_files WHERE hash_id = %s", (hash_id,))
                         existing = cur.fetchone()
-                    if existing and existing[0] != str(file):
+                    if existing and len(existing) > 0 and existing[0] != str(file):
                         with conn.cursor() as cur:
                             cur.execute(
                                 "UPDATE endoflix_files SET file_path = %s, modified_at = %s WHERE hash_id = %s",
@@ -257,7 +269,7 @@ def get_media_files(folder):
                                 (str(file),)
                             )
                             result = cur.fetchone()
-                        if result:
+                        if result and len(result) == 11:
                             file_data = {
                                 "hash_id": hash_id,
                                 "file_path": result[0],
