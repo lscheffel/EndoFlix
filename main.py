@@ -123,6 +123,15 @@ def handle_exception(error):
     logging.error(traceback.format_exc())
     return jsonify(success=False, error="Internal server error"), 500
 
+@app.route('/version')
+def version():
+    return jsonify({
+        'version': '5.0.0',
+        'name': 'EndoFlix',
+        'description': 'Video Player Web Application',
+        'release_date': '2025-10-03'
+    })
+
 @app.route('/health')
 def health_check():
     checks = {}
