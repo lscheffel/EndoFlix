@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Dict, Any
 from dataclasses import dataclass, field
@@ -8,11 +9,11 @@ class Config:
     DB_POOL_MIN: int = 1
     DB_POOL_MAX: int = 20
     DB_PARAMS: Dict[str, Any] = field(default_factory=lambda: {
-        'dbname': 'videos',
-        'user': 'postgres',
-        'password': 'admin',
-        'host': 'localhost',
-        'port': '5432'
+        'dbname': os.getenv('DB_NAME', 'videos'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', 'admin'),
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'port': os.getenv('DB_PORT', '5432')
     })
     CONNECTION_TIMEOUT: int = 30
     POOL_TIMEOUT: int = 30
@@ -20,9 +21,9 @@ class Config:
     RETRY_DELAY: int = 1
 
     # Redis
-    REDIS_HOST: str = 'localhost'
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
+    REDIS_HOST: str = os.getenv('REDIS_HOST', 'localhost')
+    REDIS_PORT: int = int(os.getenv('REDIS_PORT', '6379'))
+    REDIS_DB: int = int(os.getenv('REDIS_DB', '0'))
     REDIS_TTL: int = 86400  # 24 horas
     CACHE_MAX_SIZE: int = 1000
     CACHE_TTL: int = 3600

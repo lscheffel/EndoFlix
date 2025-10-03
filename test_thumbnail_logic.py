@@ -134,7 +134,7 @@ class ThumbnailTester:
         # This is harder to test directly, but we can verify the FFmpeg command structure
         # by checking the processor code and ensuring the timestamp calculation is correct
 
-        from utils import get_video_metadata
+        from utils import get_video_metadata_cached as get_video_metadata
 
         for video_file in self.test_dir.glob("*.mp4"):
             metadata = get_video_metadata(str(video_file))

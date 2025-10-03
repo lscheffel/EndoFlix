@@ -7,214 +7,112 @@ import csv
 from io import StringIO
 from flask_login import login_required
 from db import Database
+from cache import RedisCache
 from utils import get_media_files
 from thumbnail_processor import ThumbnailProcessor
+from models import PlaylistCreate, SaveTempPlaylist, RemovePlaylist, UpdatePlaylist, RemoveFromPlaylist
+from pydantic import ValidationError
+from services.playlist_service import PlaylistService
 
 DB_POOL = Database()  # Create database instance
+CACHE = RedisCache()
+playlist_service = PlaylistService(DB_POOL, CACHE)
 
 playlists_bp = Blueprint('playlists', __name__)
 
 @playlists_bp.route('/playlists', methods=['GET', 'POST'])
 @login_required
 def playlists():
-    with DB_POOL.get_connection() as conn:
-        with conn.cursor() as cur:
+    try:
+        if request.method == 'GET':
+            playlists = playlist_service.get_all_playlists()
+            return jsonify(playlists)
+        else:
             try:
-                if request.method == 'GET':
-                    cur.execute("SELECT name, files, play_count, source_folder FROM endoflix_playlist WHERE is_temp = FALSE")
-                    playlists = {}
-                    for row in cur.fetchall():
-                        name = row[0]
-                        files_paths = row[1]
-                        files_with_meta = []
-                        for f in files_paths:
-                            cur2 = conn.cursor()
-                            cur2.execute("SELECT size_bytes, modified_at FROM endoflix_files WHERE file_path = %s", (f,))
-                            result = cur2.fetchone()
-                            if result:
-                                size, modified = result
-                                files_with_meta.append({"path": f, "size": size, "modified": modified.isoformat() if modified else None, "extension": Path(f).suffix.lower()[1:]})
-                            else:
-                                files_with_meta.append({"path": f, "size": 0, "modified": None, "extension": Path(f).suffix.lower()[1:]})
-                            cur2.close()
-                        playlists[name] = {"files": files_with_meta, "play_count": row[2], "source_folder": row[3]}
-                    return jsonify(playlists)
-                else:
-                    data = request.get_json()
-                    name = data.get('name')
-                    files = data.get('files')
-                    source_folder = data.get('source_folder')
-                    if not name or not isinstance(name, str) or name.strip() == '':
-                        return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
-                    if not files or not isinstance(files, list) or not all(isinstance(f, str) for f in files) or len(files) == 0:
-                        return jsonify({'success': False, 'error': 'Lista de arquivos inválida'}), 400
-                    if not source_folder or not isinstance(source_folder, str) or not Path(source_folder).exists():
-                        return jsonify({'success': False, 'error': 'Pasta de origem inválida'}), 400
-                    cur.execute(
-                        "INSERT INTO endoflix_playlist (name, files, play_count, source_folder) VALUES (%s, %s, 0, %s) ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files, play_count = endoflix_playlist.play_count, source_folder = EXCLUDED.source_folder RETURNING id",
-                        (name.strip(), files, source_folder)
-                    )
-                    conn.commit()
-                    return jsonify({'success': True})
-            except Exception as e:
-                conn.rollback()
-                logging.error(f"Erro ao gerenciar playlist: {str(e)}")
-                return jsonify({'success': False, 'error': str(e)}), 500
+                data = PlaylistCreate(**request.get_json())
+            except ValidationError as e:
+                return jsonify({'success': False, 'error': str(e)}), 400
+            playlist_service.create_playlist(data.name, data.files, data.source_folder)
+            return jsonify({'success': True})
+    except Exception as e:
+        logging.error(f"Erro ao gerenciar playlist: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @playlists_bp.route('/save_temp_playlist', methods=['POST'])
 @login_required
 def save_temp_playlist():
-    with DB_POOL.get_connection() as conn:
-        with conn.cursor() as cur:
-            try:
-                data = request.get_json()
-                temp_name = data.get('temp_name')
-                new_name = data.get('new_name')
-                if not temp_name or not new_name or not isinstance(new_name, str) or new_name.strip() == '':
-                    return jsonify({'success': False, 'error': 'Nomes de playlist inválidos'}), 400
-
-                cur.execute("SELECT files, source_folder FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_name,))
-                result = cur.fetchone()
-                if not result:
-                    return jsonify({'success': False, 'error': 'Playlist temporária não encontrada'}), 404
-
-                files, source_folder = result
-                cur.execute(
-                    "INSERT INTO endoflix_playlist (name, files, play_count, source_folder, is_temp) VALUES (%s, %s, %s, %s, %s)",
-                    (new_name.strip(), files, 0, source_folder, False)
-                )
-                # Opcional: remover playlist temporária após salvar
-                cur.execute("DELETE FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_name,))
-                conn.commit()
-                logging.info(f"Playlist {new_name} salva a partir de {temp_name}")
-                return jsonify({'success': True, 'name': new_name, 'files': files})
-            except Exception as e:
-                conn.rollback()
-                logging.error(f"Erro ao salvar playlist: {str(e)}")
-                return jsonify({'success': False, 'error': str(e)}), 500
+    try:
+        try:
+            data = SaveTempPlaylist(**request.get_json())
+        except ValidationError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        result = playlist_service.save_temp_playlist(data.temp_name, data.new_name)
+        logging.info(f"Playlist {result['name']} salva a partir de {data.temp_name}")
+        return jsonify({'success': True, 'name': result['name'], 'files': result['files']})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except Exception as e:
+        logging.error(f"Erro ao salvar playlist: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @playlists_bp.route('/remove_playlist', methods=['POST'])
 @login_required
 def remove_playlist():
-    with DB_POOL.get_connection() as conn:
-        with conn.cursor() as cur:
-            try:
-                data = request.get_json()
-                name = data.get('name')
-                if not name or not isinstance(name, str) or name.strip() == '':
-                    return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
-                cur.execute("DELETE FROM endoflix_playlist WHERE name = %s", (name.strip(),))
-                if cur.rowcount > 0:
-                    conn.commit()
-                    return jsonify({'success': True}), 200
-                return jsonify({'success': False, 'error': 'Playlist não encontrada'}), 404
-            except Exception as e:
-                conn.rollback()
-                logging.error(f"Erro ao remover playlist: {str(e)}")
-                return jsonify({'success': False, 'error': str(e)}), 500
+    try:
+        try:
+            data = RemovePlaylist(**request.get_json())
+        except ValidationError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        if playlist_service.delete_playlist(data.name):
+            return jsonify({'success': True}), 200
+        return jsonify({'success': False, 'error': 'Playlist não encontrada'}), 404
+    except Exception as e:
+        logging.error(f"Erro ao remover playlist: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @playlists_bp.route('/update_playlist', methods=['POST'])
 @login_required
 def update_playlist():
-    data = request.get_json()
-    name = data.get('name')
-    source_folder = data.get('source_folder')
-    temp_playlist = data.get('temp_playlist')
-
-    if not name or not source_folder:
-        return jsonify({'success': False, 'error': 'Nome da playlist e pasta são obrigatórios'}), 400
-
-    with DB_POOL.get_connection() as conn:
-        with conn.cursor() as cur:
-            try:
-                # Verificar se a playlist existe
-                cur.execute("SELECT files, source_folder FROM endoflix_playlist WHERE name = %s AND is_temp = FALSE", (name,))
-                playlist = cur.fetchone()
-                if not playlist:
-                    return jsonify({'success': False, 'error': 'Playlist não encontrada'}), 404
-
-                # Obter arquivos atuais da pasta via get_media_files
-                updated_files = []
-                for event in get_media_files(source_folder):  # Iteração síncrona
-                    data = json.loads(event.replace('data: ', ''))
-                    if data['status'] in ['skipped', 'update']:
-                        updated_files.append(data['file']['path'])
-                    elif data['status'] == 'error':
-                        logging.error(f"Erro ao processar arquivo: {data['message']}")
-
-                # Se temp_playlist fornecida, incorporar seus arquivos
-                if temp_playlist:
-                    cur.execute("SELECT files FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_playlist,))
-                    temp_result = cur.fetchone()
-                    if temp_result:
-                        updated_files.extend(temp_result[0])
-                        # Remover playlist temporária após uso
-                        cur.execute("DELETE FROM endoflix_playlist WHERE name = %s AND is_temp = TRUE", (temp_playlist,))
-                        conn.commit()
-
-                # Sanitizar: remover duplicatas e arquivos inexistentes
-                updated_files = list(dict.fromkeys(updated_files))  # Remove duplicatas
-                valid_files = [f for f in updated_files if Path(f).exists()]
-
-                # Atualizar playlist no banco
-                cur.execute(
-                    "UPDATE endoflix_playlist SET files = %s, source_folder = %s WHERE name = %s AND is_temp = FALSE",
-                    (valid_files, source_folder, name)
-                )
-                conn.commit()
-                return jsonify({'success': True, 'files': valid_files})
-            except Exception as e:
-                logging.error(f"Erro ao atualizar playlist: {e}")
-                return jsonify({'success': False, 'error': str(e)}), 500
+    try:
+        data = UpdatePlaylist(**request.get_json())
+    except ValidationError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    try:
+        result = playlist_service.update_playlist(data.name, data.source_folder, data.temp_playlist)
+        return jsonify({'success': True, 'files': result['files']})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except Exception as e:
+        logging.error(f"Erro ao atualizar playlist: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @playlists_bp.route('/export_playlist/<name>', methods=['GET'])
 @login_required
 def export_playlist(name):
-    with DB_POOL.get_connection() as conn:
-        with conn.cursor() as cur:
-            try:
-                cur.execute("SELECT files, play_count, source_folder FROM endoflix_playlist WHERE name = %s AND is_temp = FALSE", (name,))
-                result = cur.fetchone()
-                if not result:
-                    return jsonify({'error': 'Playlist not found'}), 404
-                files, play_count, source_folder = result
-                playlist_data = {
-                    'name': name,
-                    'files': files,
-                    'play_count': play_count,
-                    'source_folder': source_folder
-                }
-                return jsonify(playlist_data)
-            except Exception as e:
-                logging.error(f"Erro ao exportar playlist: {str(e)}")
-                return jsonify({'error': str(e)}), 500
+    try:
+        playlist_data = playlist_service.get_playlist(name)
+        if not playlist_data:
+            return jsonify({'error': 'Playlist not found'}), 404
+        return jsonify(playlist_data)
+    except Exception as e:
+        logging.error(f"Erro ao exportar playlist: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @playlists_bp.route('/remove_from_playlist', methods=['POST'])
 @login_required
 def remove_from_playlist():
-    with DB_POOL.get_connection() as conn:
-        with conn.cursor() as cur:
-            try:
-                data = request.get_json()
-                name = data.get('name')
-                files_to_remove = data.get('files')
-                if not name or not isinstance(name, str) or name.strip() == '':
-                    return jsonify({'success': False, 'error': 'Nome da playlist é obrigatório'}), 400
-                if not files_to_remove or not isinstance(files_to_remove, list):
-                    return jsonify({'success': False, 'error': 'Lista de arquivos a remover é obrigatória'}), 400
-                cur.execute("SELECT files FROM endoflix_playlist WHERE name = %s AND is_temp = FALSE", (name.strip(),))
-                result = cur.fetchone()
-                if not result:
-                    return jsonify({'success': False, 'error': 'Playlist não encontrada'}), 404
-                current_files = result[0]
-                updated_files = [f for f in current_files if f not in files_to_remove]
-                cur.execute("UPDATE endoflix_playlist SET files = %s WHERE name = %s AND is_temp = FALSE", (updated_files, name.strip()))
-                conn.commit()
-                return jsonify({'success': True, 'files': updated_files})
-            except Exception as e:
-                conn.rollback()
-                logging.error(f"Erro ao remover arquivos da playlist: {str(e)}")
-                return jsonify({'success': False, 'error': str(e)}), 500
+    try:
+        try:
+            data = RemoveFromPlaylist(**request.get_json())
+        except ValidationError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        result = playlist_service.remove_from_playlist(data.name, data.files)
+        return jsonify({'success': True, 'files': result['files']})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except Exception as e:
+        logging.error(f"Erro ao remover arquivos da playlist: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @playlists_bp.route('/import_playlist', methods=['POST'])
 @login_required
@@ -250,13 +148,7 @@ def import_playlist():
         if not name or not files:
             return jsonify({'success': False, 'error': 'Dados inválidos no arquivo'}), 400
 
-        with DB_POOL.get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO endoflix_playlist (name, files, play_count, source_folder) VALUES (%s, %s, %s, %s) ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files, play_count = EXCLUDED.play_count, source_folder = EXCLUDED.source_folder",
-                    (name, files, play_count, source_folder)
-                )
-                conn.commit()
+        playlist_service.import_playlist(name, files, source_folder, play_count)
         return jsonify({'success': True})
     except Exception as e:
         logging.error(f"Erro ao importar playlist: {str(e)}")

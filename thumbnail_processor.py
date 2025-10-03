@@ -7,7 +7,7 @@ from typing import List, Set
 import time
 from config import Config
 from db import Database
-from utils import get_video_metadata
+from utils import get_video_metadata_cached as get_video_metadata
 try:
     import psutil
     HAS_PSUTIL = True

@@ -2,9 +2,11 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required
 import bcrypt
 from auth import User, DEFAULT_PASSWORD_HASH
+from limiter import limiter
 
 auth_bp = Blueprint('auth', __name__)
 
+@limiter.limit("5 per minute")
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':

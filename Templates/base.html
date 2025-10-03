@@ -254,6 +254,7 @@
                     <button id="batchRemovePlaylist" class="btn btn-danger compact-btn">Remove from Playlist</button>
                 </div>
                 <input type="text" id="searchInput" class="form-control compact-control" placeholder="Search videos">
+                <button id="applyFiltersBtn" class="btn btn-primary compact-btn">Apply Filters</button>
                 <ul id="fileList" class="list-group compact-control" style="max-height: 50vh; overflow-y: auto;"></ul>
                 <div class="btn-row">
                     <button id="clearDeck" class="btn btn-warning compact-btn">Clear</button>
@@ -290,6 +291,7 @@
         let tempPlaylistName = null;
         let isPlaylistVisible = true;
         let currentFiles = [];
+        let originalFiles = [];
         let playedVideos = new Set();
         let autoShuffleIntervalId = null;
         let favorites = [];
@@ -592,6 +594,7 @@ async function loadPlaylists() {
         async function loadSelectedPlaylist(name) {
             if (!name) {
                 currentFiles = [];
+                originalFiles = [];
                 await updateFileList(currentFiles);
                 document.getElementById('playlistDropdown').textContent = 'Selecionar Playlist';
                 return;
@@ -600,14 +603,14 @@ async function loadPlaylists() {
                 if (name === 'favorites') {
                     currentFiles = favorites; // array of objects
                     playedVideos.clear();
-                    await updateFileList(currentFiles);
                 } else {
                     const response = await fetch('/playlists');
                     const playlists = await response.json();
                     currentFiles = playlists[name] ? playlists[name].files : []; // array of objects
                     playedVideos.clear();
-                    await updateFileList(currentFiles);
                 }
+                originalFiles = [...currentFiles];
+                applyFilters();
                 // Update history
                 if (name !== 'favorites') {
                     recentPlaylists = recentPlaylists.filter(p => p !== name);
@@ -757,7 +760,8 @@ async function loadPlaylists() {
         const result = await response.json();
         if (result.success) {
             currentFiles = result.files.map(f => ({ path: f, duration: 0 }));
-            await updateFileList(currentFiles);
+            originalFiles = [...currentFiles];
+            applyFilters();
             await loadPlaylists();
             loadSelectedPlaylist(name);
             showNotification(`Playlist "${name}" atualizada com ${result.files.length} arquivos`, false);
@@ -990,46 +994,45 @@ async function loadPlaylists() {
             const sizeMax = parseFloat(document.getElementById('sizeMax').value) || Infinity;
             const dateFrom = document.getElementById('dateFrom').value ? new Date(document.getElementById('dateFrom').value) : null;
             const dateTo = document.getElementById('dateTo').value ? new Date(document.getElementById('dateTo').value) : null;
-            document.querySelectorAll('#fileList li').forEach(item => {
-                const text = item.textContent.toLowerCase();
-                const ext = item.dataset.extension;
-                const size = parseFloat(item.dataset.size) / (1024*1024) || 0; // MB
-                const modified = item.dataset.modified ? new Date(item.dataset.modified) : null;
-                const show = text.includes(nameFilter) &&
-                            text.includes(search) &&
-                            (!extensionFilter || ext === extensionFilter) &&
-                            size >= sizeMin && size <= sizeMax &&
-                            (!dateFrom || (modified && modified >= dateFrom)) &&
-                            (!dateTo || (modified && modified <= dateTo));
-                item.style.display = show ? '' : 'none';
+            const sortValue = document.getElementById('sortSelect').value;
+
+            let filtered = originalFiles.filter(file => {
+                const path = file.path || file;
+                const name = path.split(/[\\/]/).pop().toLowerCase();
+                const ext = file.extension || path.split('.').pop().toLowerCase();
+                const size = (file.size || 0) / (1024*1024); // MB
+                const modified = file.modified ? new Date(file.modified) : null;
+                return name.includes(nameFilter) &&
+                       name.includes(search) &&
+                       (!extensionFilter || ext === extensionFilter) &&
+                       size >= sizeMin && size <= sizeMax &&
+                       (!dateFrom || (modified && modified >= dateFrom)) &&
+                       (!dateTo || (modified && modified <= dateTo));
             });
+
+            // Apply sorting
+            const [field, order] = sortValue.split('-');
+            if (field === 'name') {
+                filtered.sort((a, b) => {
+                    const nameA = (a.path || a).split(/[\\/]/).pop().toLowerCase();
+                    const nameB = (b.path || b).split(/[\\/]/).pop().toLowerCase();
+                    return order === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+                });
+            } else if (field === 'date') {
+                filtered.sort((a, b) => {
+                    const dateA = a.modified ? new Date(a.modified) : new Date(0);
+                    const dateB = b.modified ? new Date(b.modified) : new Date(0);
+                    return order === 'asc' ? dateA - dateB : dateB - dateA;
+                });
+            }
+
+            currentFiles = filtered;
+            updateFileList(filtered);
         }
 
-        document.getElementById('filterInput').addEventListener('input', applyFilters);
-        document.getElementById('extensionFilter').addEventListener('change', applyFilters);
-        document.getElementById('sizeMin').addEventListener('input', applyFilters);
-        document.getElementById('sizeMax').addEventListener('input', applyFilters);
-        document.getElementById('dateFrom').addEventListener('change', applyFilters);
-        document.getElementById('dateTo').addEventListener('change', applyFilters);
-        document.getElementById('searchInput').addEventListener('input', applyFilters);
+        document.getElementById('applyFiltersBtn').addEventListener('click', applyFilters);
 
-        document.getElementById('sortSelect').addEventListener('change', e => {
-            const files = Array.from(document.querySelectorAll('#fileList li')).map(li => ({
-                path: li.dataset.path,
-                text: li.textContent,
-                size: li.dataset.size || 0,
-                modified: li.dataset.modified || '',
-                extension: li.dataset.extension || ''
-            }));
-            const [field, order] = e.target.value.split('-');
-            if (field === 'name') {
-                files.sort((a, b) => order === 'asc' ? a.text.localeCompare(b.text) : b.text.localeCompare(a.text));
-            } else if (field === 'date') {
-                files.sort((a, b) => order === 'asc' ? new Date(a.modified) - new Date(b.modified) : new Date(b.modified) - new Date(a.modified));
-            }
-            updateFileList(files.map(f => ({ path: f.path, size: f.size, modified: f.modified, extension: f.extension })));
-            applyFilters();
-        });
+        document.getElementById('sortSelect').addEventListener('change', applyFilters);
 
         async function fetchVideoFile(filePath) {
             try {
@@ -1088,7 +1091,6 @@ async function loadPlaylists() {
                 li.textContent = 'Nenhum arquivo encontrado';
                 list.appendChild(li);
             }
-            applyFilters();
         }
 
         videoContainers.forEach((container, index) => {
@@ -1239,7 +1241,8 @@ async function loadPlaylists() {
                 const result = await response.json();
                 if (result.success) {
                     currentFiles = currentFiles.filter(f => !selectedFiles.includes(f.path || f));
-                    await updateFileList(currentFiles);
+                    originalFiles = [...currentFiles];
+                    applyFilters();
                     showNotification('Arquivos removidos da playlist', false);
                 } else {
                     showNotification(`Erro: ${result.error}`, true);
