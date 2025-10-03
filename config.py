@@ -47,3 +47,5 @@ class Config:
     THUMB_QUALITY: int = 80  # For WebP
     THUMB_EXTRACTION_POINT: float = 0.1  # 10% into video
     THUMB_WORKERS: int = 4
+    FFMPEG_TIMEOUT: int = 60  # Timeout for FFmpeg commands in seconds
+    THUMB_BATCH_SIZE: int = 100  # Process videos in batches of 100

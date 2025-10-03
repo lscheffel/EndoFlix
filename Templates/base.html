@@ -25,7 +25,7 @@
         .share-overlay { position: absolute; top: 40px; left: 10px; z-index: 10; cursor: pointer; }
         .snapshot-overlay { position: absolute; top: 70px; left: 10px; z-index: 10; cursor: pointer; background: transparent; border: none; border-radius: 3px; padding: 1px; font-size: 18px; color: #fff; text-shadow: 0 0 3px black; }
         .burst-overlay { position: absolute; top: 100px; left: 10px; z-index: 10; cursor: pointer; background: transparent; border: none; border-radius: 3px; padding: 1px; font-size: 18px; color: #fff; text-shadow: 0 0 3px black; }
-        .speed-overlay { position: absolute; bottom: 10px; right: 10px; z-index: 10; }
+        .speed-overlay { position: absolute; top: 10px; right: 70px; z-index: 10; }
         .favorite-btn { cursor: pointer; margin-right: 5px; }
         .played-indicator { margin-left: 5px; }
         .spinner { 
@@ -41,7 +41,7 @@
         }
         .spinner-text { display: none; text-align: center; font-size: 0.8em; color: #f8f9fa; margin-top: 5px; }
         .theme-toggle { cursor: pointer; }
-        .loop-overlay { position: absolute; bottom: 40px; right: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 2px 5px; border-radius: 3px; font-size: 0.9em; color: #fff; }
+        .loop-overlay { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 2px 5px; border-radius: 3px; font-size: 0.9em; color: #fff; }
         .dropdown-submenu {
             position: relative;
         }
@@ -208,7 +208,7 @@
                     <ul class="dropdown-menu" aria-labelledby="playlistDropdown">
                         <li><a class="dropdown-item" href="#" onclick="loadSelectedPlaylist('favorites')">Favoritos</a></li>
                         <li class="dropdown-submenu">
-                            <a class="dropdown-item dropdown-toggle" href="#" data-bs-toggle="dropdown">Recentes</a>
+                            <a class="dropdown-item" href="#" data-bs-toggle="dropdown" onclick="loadRecentPlaylist()">Recentes</a>
                             <ul class="dropdown-menu" id="recentPlaylistsMenu">
                             </ul>
                         </li>
@@ -249,11 +249,6 @@
                     <option value="date-asc">Date Asc</option>
                     <option value="date-desc">Date Desc</option>
                 </select>
-                <div class="d-flex gap-2" style="margin-top: 5px;">
-                    <label>
-                        <input type="checkbox" id="thumbnailCheckbox"> Enable Thumbnails
-                    </label>
-                </div>
                 <div class="btn-row">
                     <button id="batchFavorites" class="btn btn-warning compact-btn">Add/Remove Favorites</button>
                     <button id="batchRemovePlaylist" class="btn btn-danger compact-btn">Remove from Playlist</button>
@@ -300,6 +295,14 @@
         let favorites = [];
         let activePlayer = null;
         let recentPlaylists = JSON.parse(localStorage.getItem('recentPlaylists')) || [];
+
+        function loadRecentPlaylist() {
+            if (recentPlaylists.length > 0) {
+                loadSelectedPlaylist(recentPlaylists[0]);
+            } else {
+                alert('Nenhuma playlist recente encontrada.');
+            }
+        }
 
         function showNotification(message, isError = false) {
             const notificationEl = document.createElement('div');
@@ -537,7 +540,7 @@ async function loadPlaylists() {
         async function loadFavorites() {
             try {
                 const response = await fetch('/favorites');
-                favorites = await response.json();
+                favorites = await response.json(); // array of objects
                 await updateFileList(currentFiles);
                 updateFavoriteIcons();
             } catch (e) {
@@ -546,7 +549,7 @@ async function loadPlaylists() {
         }
 
         async function toggleFavorite(file) {
-            const isFavorite = favorites.includes(file);
+            const isFavorite = favorites.some(f => f.path === file);
             try {
                 const response = await fetch('/favorites', {
                     method: isFavorite ? 'DELETE' : 'POST',
@@ -556,10 +559,11 @@ async function loadPlaylists() {
                 const result = await response.json();
                 if (result.success) {
                     if (isFavorite) {
-                        favorites = favorites.filter(f => f !== file);
+                        favorites = favorites.filter(f => f.path !== file);
                         showNotification('Removido dos favoritos', false);
                     } else {
-                        favorites.push(file);
+                        // Since we don't have metadata here, reload favorites
+                        await loadFavorites();
                         showNotification('Adicionado aos favoritos', false);
                     }
                     await updateFileList(currentFiles);
@@ -594,13 +598,13 @@ async function loadPlaylists() {
             }
             try {
                 if (name === 'favorites') {
-                    currentFiles = favorites.map(f => ({ path: f }));
+                    currentFiles = favorites; // array of objects
                     playedVideos.clear();
                     await updateFileList(currentFiles);
                 } else {
                     const response = await fetch('/playlists');
                     const playlists = await response.json();
-                    currentFiles = playlists[name] ? playlists[name].files.map(f => ({ path: f })) : [];
+                    currentFiles = playlists[name] ? playlists[name].files : []; // array of objects
                     playedVideos.clear();
                     await updateFileList(currentFiles);
                 }
@@ -1039,51 +1043,11 @@ async function loadPlaylists() {
             }
         }
 
-        async function generateThumbnail(filePath) {
-            const cacheKey = 'thumb_' + filePath;
-            const cached = localStorage.getItem(cacheKey);
-            if (cached) return cached;
-            console.log('Generating thumbnail for', filePath);
-            const video = document.createElement('video');
-            video.src = `/video/${encodeURIComponent(filePath)}`;
-            video.preload = 'metadata';
-            video.muted = true;
-            return new Promise((resolve) => {
-                video.onloadedmetadata = () => {
-                    video.currentTime = 0;
-                };
-                video.onseeked = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 100;
-                    canvas.height = 60;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    const dataURL = canvas.toDataURL('image/jpeg', 0.8);
-                    localStorage.setItem(cacheKey, dataURL);
-                    console.log('Thumbnail generated for', filePath, 'success');
-                    resolve(dataURL);
-                };
-                video.onerror = () => {
-                    console.log('Thumbnail failed for', filePath, 'error');
-                    resolve(null);
-                };
-                setTimeout(() => {
-                    console.log('Thumbnail timed out for', filePath);
-                    resolve(null);
-                }, 5000);
-            });
-        }
 
         async function updateFileList(files) {
             const list = document.getElementById('fileList');
             list.innerHTML = '';
             if (files && files.length > 0) {
-                let thumbs = [];
-                if (document.getElementById('thumbnailCheckbox').checked) {
-                    console.log('Generating thumbs for', files.length, 'files');
-                    const thumbPromises = files.map(file => generateThumbnail(file.path || file));
-                    thumbs = await Promise.all(thumbPromises);
-                }
                 files.forEach((file, index) => {
                     const path = file.path || file;
                     const li = document.createElement('li');
@@ -1093,13 +1057,10 @@ async function loadPlaylists() {
                     li.dataset.size = file.size || 0;
                     li.dataset.modified = file.modified || '';
                     li.dataset.extension = file.extension || path.split('.').pop().toLowerCase();
-                    const isFavorite = favorites.includes(path);
-                    const thumb = thumbs[index];
-                    const thumbHtml = thumb ? `<img src="${thumb}" width="50" height="30" style="margin-right:5px;" />` : '';
+                    const isFavorite = favorites.some(f => f.path === path);
                     li.innerHTML = `
                         <input type="checkbox" class="file-checkbox me-2" data-path="${path}">
                         <i class="${isFavorite ? 'bi-star-fill text-warning' : 'bi-star'} favorite-btn"></i>
-                        ${thumbHtml}
                         <span>${path.split(/[\\/]/).pop()}</span>
                         ${playedVideos.has(path) ? '<i class="bi bi-check-circle played-indicator text-success"></i>' : ''}
                     `;
@@ -1292,19 +1253,13 @@ async function loadPlaylists() {
         document.getElementById('batchRemovePlaylist').addEventListener('click', batchRemoveFromPlaylist);
 
         // Submenu toggle
-        document.querySelectorAll('.dropdown-submenu .dropdown-toggle').forEach(item => {
+        document.querySelectorAll('.dropdown-submenu a').forEach(item => {
             item.addEventListener('click', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 const submenu = this.nextElementSibling;
                 submenu.classList.toggle('show');
             });
-        });
-
-        // Thumbnail checkbox change
-        document.getElementById('thumbnailCheckbox').addEventListener('change', async () => {
-            console.log('Thumbnail checkbox changed to:', document.getElementById('thumbnailCheckbox').checked);
-            await updateFileList(currentFiles);
         });
 
         loadPlaylists();

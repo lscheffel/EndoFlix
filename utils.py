@@ -65,31 +65,42 @@ def get_video_metadata(file_path):
             except Exception as e:
                 logging.error(f"Erro ao consultar metadados no banco para {file_path_str}: {e}")
 
-    try:
-        cmd = [FFPROBE_PATH, "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,duration", "-of", "json", file_path_str]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        metadata = json.loads(result.stdout)
-        streams = metadata.get("streams", [])
-        video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
+    cmd = [FFPROBE_PATH, "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height,duration", "-of", "json", file_path_str]
+    result = subprocess.run(cmd, capture_output=True, text=False)
+    if result.returncode == 0:
+        stdout_text = result.stdout.decode('utf-8', errors='replace')
+        try:
+            metadata = json.loads(stdout_text)
+            streams = metadata.get("streams", [])
+            video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
 
-        duration = float(video_stream.get("duration", 0))
-        width = video_stream.get("width", 0)
-        height = video_stream.get("height", 0)
-        resolution = f"{width}x{height}" if width and height else "unknown"
-        orientation = "portrait" if width < height else "landscape" if width > height else "square"
-        video_codec = video_stream.get("codec_name", "unknown")
+            duration = float(video_stream.get("duration", 0))
+            width = video_stream.get("width", 0)
+            height = video_stream.get("height", 0)
+            resolution = f"{width}x{height}" if width and height else "unknown"
+            orientation = "portrait" if width < height else "landscape" if width > height else "square"
+            video_codec = video_stream.get("codec_name", "unknown")
 
-        result = {
-            "duration_seconds": duration,
-            "resolution": resolution,
-            "orientation": orientation,
-            "video_codec": video_codec
-        }
-        # Cache the result
-        REDIS_CLIENT.set(f"metadata:{file_path_str}", json.dumps(result), ttl=86400)
-        return result
-    except Exception as e:
-        logging.error(f"Erro ao extrair metadados de {file_path_str}: {e}")
+            result = {
+                "duration_seconds": duration,
+                "resolution": resolution,
+                "orientation": orientation,
+                "video_codec": video_codec
+            }
+            # Cache the result
+            REDIS_CLIENT.set(f"metadata:{file_path_str}", json.dumps(result), ttl=86400)
+            return result
+        except (json.JSONDecodeError, KeyError) as e:
+            logging.error(f"Failed to parse ffprobe output for {file_path_str}: {e}")
+            return {
+                "duration_seconds": 0,
+                "resolution": "unknown",
+                "orientation": "unknown",
+                "video_codec": "unknown"
+            }
+    else:
+        stderr_text = result.stderr.decode('utf-8', errors='replace') if result.stderr else 'Unknown error'
+        logging.error(f"ffprobe failed for {file_path_str}: {stderr_text}")
         return {
             "duration_seconds": 0,
             "resolution": "unknown",
@@ -206,7 +217,7 @@ def get_media_files(folder):
                         "last_viewed_at": result[9],
                         "is_favorite": result[10]
                     }
-                    media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
+                    media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"], "size": file_data["size_bytes"], "modified": file_data["modified_at"].isoformat() if file_data["modified_at"] else None, "extension": Path(file_data["file_path"]).suffix.lower()[1:]}
                     yield f"data: {json.dumps({'status': 'skipped', 'file': media_item, 'progress': i, 'total': len(files_to_process), 'message': 'Arquivo já indexado'})}\n\n"
                 else:
                     # Verificar se é um arquivo movido (mesmo hash, outro caminho)
@@ -247,7 +258,7 @@ def get_media_files(folder):
                         with ProcessPoolExecutor(max_workers=8) as executor:
                             future = executor.submit(process_file, file)
                             file_data = future.result()
-                            media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"]}
+                            media_item = {"path": file_data["file_path"], "duration": file_data["duration_seconds"], "size": file_data["size_bytes"], "modified": file_data["modified_at"].isoformat() if file_data["modified_at"] else None, "extension": Path(file_data["file_path"]).suffix.lower()[1:]}
                             index_file(conn, file_data)
                             yield f"data: {json.dumps({'status': 'update', 'file': media_item, 'progress': i, 'total': len(files_to_process)})}\n\n"
                 # Adicionar arquivo à playlist temporária

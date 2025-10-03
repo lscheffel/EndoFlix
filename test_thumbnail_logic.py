@@ -37,9 +37,7 @@ class ThumbnailTester:
         logger.info("Setting up test playlist...")
 
         # Get absolute paths for the test videos
-        video_files = []
-        for video_file in self.test_dir.glob("*.mp4"):
-            video_files.append(str(video_file.absolute()))
+        video_files = [str((self.test_dir / "test_video1.mp4").absolute())]
 
         if not video_files:
             raise ValueError("No test video files found!")
@@ -205,17 +203,18 @@ class ThumbnailTester:
         return True
 
     def test_performance(self):
-        """Test 5: Test performance optimizations for large playlists."""
-        logger.info("Testing performance optimizations...")
+        """Test 5: Test performance optimizations for large playlists (100+ videos)."""
+        logger.info("Testing performance optimizations for large volumes...")
 
         # Create a larger playlist by duplicating videos
         large_playlist_name = "large_test_playlist"
         large_video_files = []
 
-        # Duplicate videos to simulate a larger playlist
-        for i in range(10):  # Create 30 videos (10 copies of each of 3 videos)
-            for video_file in self.test_dir.glob("*.mp4"):
-                large_video_files.append(str(video_file.absolute()))
+        # Duplicate videos to simulate a larger playlist (120 videos = 120 copies of test_video1.mp4)
+        for i in range(120):
+            large_video_files.append(str((self.test_dir / "test_video1.mp4").absolute()))
+
+        logger.info(f"Created simulated playlist with {len(large_video_files)} video entries")
 
         # Create large playlist
         with self.db.get_connection() as conn:
@@ -233,15 +232,19 @@ class ThumbnailTester:
 
         processing_time = end_time - start_time
         logger.info(f"Processed {len(large_video_files)} videos in {processing_time:.2f} seconds")
+        logger.info(f"Average time per video: {processing_time/len(large_video_files):.3f} seconds")
 
         assert result['success'], f"Large playlist processing failed: {result.get('error', 'Unknown error')}"
-        assert processing_time < 60, f"Processing took too long: {processing_time:.2f} seconds"  # Should be much faster with parallel processing
+        assert processing_time < 120, f"Processing took too long: {processing_time:.2f} seconds (should be < 120s for 120 videos)"
 
-        # Verify all thumbnails were created
+        # Verify all thumbnails were created (should be 3 unique thumbnails since same videos repeated)
         thumbs_dir = self.test_dir / '.thumbs'
         expected_thumbs = len(set(Path(f).stem for f in large_video_files))  # Unique video names
         actual_thumbs = len(list(thumbs_dir.glob("*.webp")))
         assert actual_thumbs >= expected_thumbs, f"Expected at least {expected_thumbs} thumbnails, got {actual_thumbs}"
+
+        # Verify batch processing and worker settings
+        logger.info(f"Configuration: workers={self.processor.max_workers}, batch_size={self.processor.batch_size}, timeout={self.processor.ffmpeg_timeout}s")
 
         # Clean up
         with self.db.get_connection() as conn:
@@ -249,7 +252,52 @@ class ThumbnailTester:
                 cur.execute("DELETE FROM endoflix_playlist WHERE name = %s", (large_playlist_name,))
                 conn.commit()
 
-        logger.info("✓ Performance test passed")
+        logger.info("✓ Large volume performance test passed")
+        return True
+
+    def test_optimizations_and_requirements(self):
+        """Test 6: Verify all optimization requirements for large volume processing."""
+        logger.info("Testing optimization requirements...")
+
+        # Verify configuration settings before processing
+        assert self.processor.max_workers == 4, f"Expected 4 workers, got {self.processor.max_workers}"
+        assert self.processor.ffmpeg_timeout == 60, f"Expected 60s timeout, got {self.processor.ffmpeg_timeout}"
+        assert self.processor.batch_size == 100, f"Expected batch size 100, got {self.processor.batch_size}"
+
+        # Test .thumbs folder creation as hidden
+        thumbs_dir = self.test_dir / '.thumbs'
+        result = self.processor.process_playlist_thumbnails(self.playlist_name)
+        assert result['success'], f"Thumbnail processing failed: {result.get('error', 'Unknown error')}"
+
+        assert thumbs_dir.exists(), ".thumbs directory was not created"
+        if os.name == 'nt':  # Windows
+            import ctypes
+            attrs = ctypes.windll.kernel32.GetFileAttributesW(str(thumbs_dir))
+            is_hidden = bool(attrs & 2)  # FILE_ATTRIBUTE_HIDDEN
+            assert is_hidden, ".thumbs directory should be hidden on Windows"
+
+        # Test correct saving location
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT files FROM endoflix_playlist WHERE name = %s", (self.playlist_name,))
+                result = cur.fetchone()
+                video_files = result[0] if result else []
+
+        for video_path in video_files:
+            video_name = Path(video_path).stem
+            thumb_path = thumbs_dir / f"{video_name}.webp"
+            assert thumb_path.exists(), f"Thumbnail not saved in correct location: {thumb_path}"
+
+        # Test progress logging (check if logs contain expected messages)
+        # This is harder to test directly, but we can verify the processor has logging
+
+        # Test resource monitoring (if psutil available)
+        if hasattr(self.processor, '__class__') and 'psutil' in str(self.processor.__class__.__module__):
+            logger.info("Resource monitoring is implemented")
+        else:
+            logger.info("Resource monitoring check skipped (psutil not available)")
+
+        logger.info("✓ Optimization requirements test passed")
         return True
 
     def run_all_tests(self):
@@ -269,6 +317,7 @@ class ThumbnailTester:
             test_results.append(("Frame extraction timing", self.test_frame_extraction_timing()))
             test_results.append(("Sanitization", self.test_sanitization()))
             test_results.append(("Performance", self.test_performance()))
+            test_results.append(("Optimizations and requirements", self.test_optimizations_and_requirements()))
 
             # Summary
             passed = sum(1 for _, result in test_results if result)

@@ -22,7 +22,7 @@ class RedisCache:
                 host=Config.REDIS_HOST,
                 port=Config.REDIS_PORT,
                 db=Config.REDIS_DB,
-                decode_responses=True,
+                decode_responses=False,
                 socket_timeout=Config.CONNECTION_TIMEOUT
             )
             self._local_cache = TTLCache(
@@ -40,14 +40,17 @@ class RedisCache:
         # Tenta primeiro no cache local
         if key in self._local_cache:
             return self._local_cache[key]
-        
+
         # Se não encontrou, busca no Redis
         try:
             value = self._client.get(key)
             if value:
+                # Descomprime o valor
+                decompressed = self._decompress(value)
                 # Atualiza cache local
-                self._local_cache[key] = value
-            return value
+                self._local_cache[key] = decompressed
+                return decompressed
+            return None
         except redis.RedisError as e:
             logging.error(f"Erro ao acessar Redis: {e}")
             return None
@@ -96,7 +99,7 @@ class RedisCache:
     def batch_get(self, keys: list) -> dict:
         try:
             values = self._client.mget(keys)
-            return {k: v for k, v in zip(keys, values) if v is not None}
+            return {k: self._decompress(v) for k, v in zip(keys, values) if v is not None}
         except redis.RedisError as e:
             logging.error(f"Erro no batch get do Redis: {e}")
             return {}

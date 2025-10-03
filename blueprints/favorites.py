@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 import logging
 from flask_login import login_required
 from db import Database
+from pathlib import Path
 
 DB_POOL = Database()  # Create database instance
 
@@ -14,8 +15,8 @@ def favorites():
         with conn.cursor() as cur:
             try:
                 if request.method == 'GET':
-                    cur.execute("SELECT file_path FROM endoflix_files WHERE is_favorite = TRUE")
-                    favorites = [row[0] for row in cur.fetchall()]
+                    cur.execute("SELECT file_path, size_bytes, modified_at FROM endoflix_files WHERE is_favorite = TRUE")
+                    favorites = [{"path": row[0], "size": row[1], "modified": row[2].isoformat() if row[2] else None, "extension": Path(row[0]).suffix.lower()[1:]} for row in cur.fetchall()]
                     return jsonify(favorites)
                 elif request.method == 'POST':
                     data = request.get_json()

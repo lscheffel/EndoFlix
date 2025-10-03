@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from pathlib import Path
 import json
 import logging
+import threading
 import csv
 from io import StringIO
 from flask_login import login_required
@@ -21,7 +22,22 @@ def playlists():
             try:
                 if request.method == 'GET':
                     cur.execute("SELECT name, files, play_count, source_folder FROM endoflix_playlist WHERE is_temp = FALSE")
-                    playlists = {row[0]: {"files": row[1], "play_count": row[2], "source_folder": row[3]} for row in cur.fetchall()}
+                    playlists = {}
+                    for row in cur.fetchall():
+                        name = row[0]
+                        files_paths = row[1]
+                        files_with_meta = []
+                        for f in files_paths:
+                            cur2 = conn.cursor()
+                            cur2.execute("SELECT size_bytes, modified_at FROM endoflix_files WHERE file_path = %s", (f,))
+                            result = cur2.fetchone()
+                            if result:
+                                size, modified = result
+                                files_with_meta.append({"path": f, "size": size, "modified": modified.isoformat() if modified else None, "extension": Path(f).suffix.lower()[1:]})
+                            else:
+                                files_with_meta.append({"path": f, "size": 0, "modified": None, "extension": Path(f).suffix.lower()[1:]})
+                            cur2.close()
+                        playlists[name] = {"files": files_with_meta, "play_count": row[2], "source_folder": row[3]}
                     return jsonify(playlists)
                 else:
                     data = request.get_json()
@@ -250,9 +266,13 @@ def import_playlist():
 @login_required
 def generate_thumbnails(playlist_name):
     try:
-        processor = ThumbnailProcessor()
-        result = processor.process_playlist_thumbnails(playlist_name)
-        return jsonify(result)
+        def run_in_background():
+            processor = ThumbnailProcessor()
+            processor.process_playlist_thumbnails(playlist_name)
+
+        thread = threading.Thread(target=run_in_background, daemon=True)
+        thread.start()
+        return jsonify({"status": "started", "message": "Thumbnail generation started in background"})
     except Exception as e:
-        logging.error(f"Erro ao gerar thumbnails para playlist {playlist_name}: {str(e)}")
+        logging.error(f"Erro ao iniciar geração de thumbnails para playlist {playlist_name}: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
