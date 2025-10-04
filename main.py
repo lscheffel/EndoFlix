@@ -154,6 +154,7 @@ def health_check():
         status = "unhealthy"
 
     # Check Redis
+    logging.info(f"Health check Redis: REDIS_CLIENT={REDIS_CLIENT}")
     try:
         if REDIS_CLIENT:
             REDIS_CLIENT.ping()
@@ -217,9 +218,10 @@ def init_redis(max_retries=3, retry_delay=2):
     global REDIS_CLIENT
     for attempt in range(max_retries):
         try:
-            REDIS_CLIENT = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+            REDIS_CLIENT = redis.Redis(host=Config.REDIS_HOST, port=Config.REDIS_PORT, db=Config.REDIS_DB, password=Config.REDIS_PASSWORD or None, decode_responses=True)
             REDIS_CLIENT.ping()
             logging.info("Conexão com Redis estabelecida")
+            logging.info(f"REDIS_CLIENT initialized: {REDIS_CLIENT}")
             return True
         except redis.ConnectionError as e:
             logging.warning(f"Tentativa {attempt + 1}/{max_retries} de conexão ao Redis falhou: {e}")
@@ -230,6 +232,7 @@ def init_redis(max_retries=3, retry_delay=2):
             break
     logging.warning("Não foi possível conectar ao Redis. Usando fallback sem cache.")
     REDIS_CLIENT = None
+    logging.info("init_redis failed, REDIS_CLIENT set to None")
     return False
 
 def shutdown_redis():

@@ -31,21 +31,27 @@ class PlaylistService:
 
     def get_playlist(self, name: str) -> Optional[dict]:
         """Get playlist, check cache first, then DB, cache result."""
+        logging.info(f"Getting playlist: {name}")
         cache_key = f"playlist:{name}"
         cached = self.cache.get(cache_key)
         if cached:
+            logging.info(f"Found cached playlist: {name}")
             try:
                 return json.loads(cached)
             except json.JSONDecodeError:
+                logging.warning(f"Invalid cache for playlist: {name}")
                 pass  # Fall through to DB
 
+        logging.info(f"Querying DB for playlist: {name}")
         with self.db.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT files, play_count, source_folder FROM endoflix_playlist WHERE name = %s AND is_temp = FALSE", (name,))
                 result = cur.fetchone()
                 if not result or len(result) != 3:
+                    logging.warning(f"No result from DB for playlist: {name}, result: {result}")
                     return None
                 files, play_count, source_folder = result
+                logging.info(f"Found DB data for playlist: {name}, files count: {len(files)}")
                 # Add metadata to files
                 files_with_meta = []
                 for f in files:
@@ -61,6 +67,7 @@ class PlaylistService:
                 playlist_data = {"name": name, "files": files_with_meta, "play_count": play_count, "source_folder": source_folder}
                 # Cache the result
                 self.cache.set(cache_key, json.dumps(playlist_data))
+                logging.info(f"Returning playlist: {name}")
                 return playlist_data
 
     def update_playlist(self, name: str, source_folder: str, temp_playlist: Optional[str] = None) -> dict:
@@ -129,15 +136,22 @@ class PlaylistService:
 
     def get_all_playlists(self) -> dict:
         """Get all non-temp playlists."""
+        logging.info("Starting get_all_playlists")
         with self.db.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT name FROM endoflix_playlist WHERE is_temp = FALSE")
                 names = [row[0] for row in cur.fetchall()]
+                logging.info(f"Found playlist names: {names}")
                 playlists = {}
                 for name in names:
+                    logging.info(f"Loading playlist: {name}")
                     playlist = self.get_playlist(name)
                     if playlist:
                         playlists[name] = playlist
+                        logging.info(f"Successfully loaded playlist: {name}")
+                    else:
+                        logging.warning(f"Failed to load playlist: {name}")
+                logging.info(f"Returning {len(playlists)} playlists")
                 return playlists
 
     def save_temp_playlist(self, temp_name: str, new_name: str) -> dict:

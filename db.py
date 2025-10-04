@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from config import Config
 import threading
 import time
+import logging
 from queue import Queue, Empty
 
 class Database:
@@ -21,12 +22,15 @@ class Database:
             if self._connections is None:
                 config = Config()
                 self._connections = Queue(maxsize=config.DB_POOL_MAX)
+                logging.info(f"Initializing database connection pool with min={config.DB_POOL_MIN}, max={config.DB_POOL_MAX}")
                 for _ in range(config.DB_POOL_MIN):
                     self._create_connection()
+                logging.info(f"Database connection pool initialized with {self._connections.qsize()} connections")
 
     def _create_connection(self):
         config = Config()
         try:
+            logging.debug(f"Attempting to connect to DB: {config.DB_PARAMS['host']}:{config.DB_PARAMS['port']}/{config.DB_PARAMS['dbname']}")
             conn = pg8000.connect(
                 database=config.DB_PARAMS['dbname'],
                 user=config.DB_PARAMS['user'],
@@ -34,19 +38,37 @@ class Database:
                 host=config.DB_PARAMS['host'],
                 port=int(config.DB_PARAMS['port'])
             )
-            self._connections.put(conn)
+            if self._connections is not None:
+                self._connections.put(conn)
+                logging.debug("Database connection created and added to pool")
+            else:
+                logging.error("Connection pool not initialized")
         except Exception as e:
-            print(f"Failed to create database connection: {e}")
+            logging.error(f"Failed to create database connection: {e}")
 
     @contextmanager
     def get_connection(self):
         if self._connections is None:
             raise RuntimeError("Database connections not initialized")
-        conn = self._connections.get(timeout=30)
+        logging.debug(f"Attempting to get connection from pool. Current pool size: {self._connections.qsize()}")
+        try:
+            conn = self._connections.get(timeout=30)
+            logging.debug("Connection acquired from pool")
+        except Empty:
+            logging.warning("Connection pool is empty, attempting to create new connection")
+            self._create_connection()
+            try:
+                conn = self._connections.get(timeout=30)
+                logging.debug("New connection acquired from pool")
+            except Empty:
+                logging.error("Failed to acquire connection after creating new one")
+                raise
         try:
             yield conn
         finally:
-            self._connections.put(conn)
+            if self._connections is not None:
+                self._connections.put(conn)
+                logging.debug("Connection returned to pool")
 
     def getconn(self):
         if self._connections is None:

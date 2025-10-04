@@ -487,13 +487,20 @@ async function saveTempPlaylist() {
 async function loadPlaylists() {
     try {
         const response = await fetch('/playlists');
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+            console.error('Fetch failed:', response.statusText);
+            return;
+        }
         const playlists = await response.json();
+        console.log('Fetched playlists:', playlists);
         const menu = document.querySelector('.dropdown-menu');
         // Clear existing playlists (keep favorites and submenu)
         const items = menu.querySelectorAll('li:not(.dropdown-submenu):not(:first-child)');
         items.forEach(item => item.remove());
         // Add playlists
         for (const name in playlists) {
+            console.log('Processing playlist:', name);
             if (!name.startsWith('temp_')) { // Excluir playlists temporárias
                 const li = document.createElement('li');
                 const a = document.createElement('a');
@@ -503,6 +510,7 @@ async function loadPlaylists() {
                 a.onclick = () => loadSelectedPlaylist(name);
                 li.appendChild(a);
                 menu.appendChild(li);
+                console.log('Added li for:', name);
             }
         }
         // Populate recent submenu

@@ -11,6 +11,12 @@ def validate_path_safe(path: str) -> str:
         raise ValueError("Absolute paths are not allowed")
     return path
 
+def validate_source_folder_path(path: str) -> str:
+    """Validate that path does not contain traversal sequences. Allows absolute paths."""
+    if '..' in path:
+        raise ValueError("Path contains directory traversal")
+    return path
+
 class PlaylistCreate(BaseModel):
     name: str
     files: List[str]
@@ -43,9 +49,7 @@ class PlaylistCreate(BaseModel):
     @field_validator('source_folder')
     @classmethod
     def validate_source_folder(cls, v):
-        validate_path_safe(v)
-        if not Path(v).exists():
-            raise ValueError("Source folder does not exist")
+        validate_source_folder_path(v)
         return v
 
 class SaveTempPlaylist(BaseModel):
@@ -84,9 +88,7 @@ class UpdatePlaylist(BaseModel):
     @field_validator('source_folder')
     @classmethod
     def validate_source_folder(cls, v):
-        validate_path_safe(v)
-        if not Path(v).exists():
-            raise ValueError("Source folder does not exist")
+        validate_source_folder_path(v)
         return v
 
 class RemoveFromPlaylist(BaseModel):
