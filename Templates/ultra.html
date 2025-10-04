@@ -39,7 +39,7 @@
         </div>
         <div id="dashboardContent">
             <div class="row">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="card bg-dark text-light">
                         <div class="card-body">
                             <h5 class="card-title">Vídeos</h5>
@@ -47,7 +47,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="card bg-dark text-light">
                         <div class="card-body">
                             <h5 class="card-title">Playlists</h5>
@@ -55,11 +55,45 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="card bg-dark text-light">
                         <div class="card-body">
                             <h5 class="card-title">Sessões</h5>
                             <p class="card-text" id="sessionCount">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Sessões Ativas</h5>
+                            <p class="card-text" id="activeSessionsCount">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Tempo Total de Reprodução</h5>
+                            <p class="card-text" id="totalPlayTime">0h 0m 0s</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Atividade 24h</h5>
+                            <p class="card-text" id="userActivity24h">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Status em Tempo Real</h5>
+                            <p class="card-text" id="realtimeStatus">Conectado</p>
                         </div>
                     </div>
                 </div>
@@ -84,24 +118,63 @@
                 </div>
             </div>
             <h3>Vídeos Mais Reproduzidos</h3>
-            <table class="table table-dark">
+            <div class="mb-3">
+                <div class="row">
+                    <div class="col-md-4">
+                        <input type="text" id="searchInput" class="form-control" placeholder="Buscar vídeos...">
+                    </div>
+                    <div class="col-md-2">
+                        <select id="sortBy" class="form-select">
+                            <option value="view_count">Reproduções</option>
+                            <option value="total_play_time">Tempo Total</option>
+                            <option value="engagement_score">Engajamento</option>
+                            <option value="file_path">Nome</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select id="sortOrder" class="form-select">
+                            <option value="desc">Decrescente</option>
+                            <option value="asc">Crescente</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select id="limitSelect" class="form-select">
+                            <option value="10">10 por página</option>
+                            <option value="25">25 por página</option>
+                            <option value="50">50 por página</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button id="refreshBtn" class="btn btn-primary w-100">Atualizar</button>
+                    </div>
+                </div>
+            </div>
+            <table class="table table-dark table-hover">
                 <thead>
                     <tr>
                         <th>Vídeo</th>
                         <th>Reproduções</th>
+                        <th>Tempo Total</th>
+                        <th>Engajamento</th>
                         <th>Favorito</th>
                         <th>Ações</th>
                     </tr>
                 </thead>
                 <tbody id="topVideosTable"></tbody>
             </table>
+            <nav id="paginationNav" aria-label="Paginação dos vídeos">
+                <ul class="pagination justify-content-center" id="paginationControls"></ul>
+            </nav>
             <h3>Sessões</h3>
             <table class="table table-dark">
                 <thead>
                     <tr>
                         <th>Nome</th>
                         <th>Vídeos</th>
-                        <th>Data</th>
+                        <th>Estado</th>
+                        <th>Duração</th>
+                        <th>Data Criação</th>
+                        <th>Última Atualização</th>
                         <th>Ações</th>
                     </tr>
                 </thead>
@@ -118,254 +191,25 @@
                         <option value="1.5">1.5x</option>
                         <option value="2">2x</option>
                     </select>
+                    <span id="currentSpeed" class="ms-2 text-muted">Velocidade atual: 1x</span>
                 </div>
                 <div class="mb-3">
                     <button class="btn btn-success btn-compact me-2" onclick="toggleAutoShuffle(true)">Ativar Auto-Shuffle</button>
                     <button class="btn btn-danger btn-compact me-2" onclick="toggleAutoShuffle(false)">Desativar Auto-Shuffle</button>
                     <input type="number" id="shuffleInterval" class="form-control d-inline-block w-auto" min="1" value="3" style="width: 80px;">
+                    <span id="shuffleStatus" class="ms-2 text-muted">Shuffle: Desativado</span>
                 </div>
                 <div class="mb-3">
                     <button class="btn btn-info btn-compact" onclick="exportReport()">Exportar Relatório (CSV)</button>
+                </div>
+                <div class="mb-3">
+                    <small class="text-muted">Status: <span id="controlStatus">Pronto</span></small>
                 </div>
             </div>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        let analyticsData = {};
-
-        function alert(message) {
-            const notificationEl = document.createElement('div');
-            notificationEl.textContent = message;
-            notificationEl.style.position = 'fixed';
-            notificationEl.style.top = '10px';
-            notificationEl.style.right = '10px';
-            notificationEl.style.background = 'rgba(0,0,0,0.8)';
-            notificationEl.style.color = 'white';
-            notificationEl.style.padding = '10px';
-            notificationEl.style.borderRadius = '5px';
-            notificationEl.style.zIndex = '1000';
-            document.body.appendChild(notificationEl);
-            setTimeout(() => notificationEl.remove(), 3000);
-        }
-
-        async function fetchAnalytics() {
-            try {
-                const response = await fetch('/analytics');
-                if (!response.ok) throw new Error('Erro ao carregar análises');
-                analyticsData = await response.json();
-                document.getElementById('errorMessage').style.display = 'none';
-                document.getElementById('dashboardContent').style.display = 'block';
-                updateDashboard();
-            } catch (error) {
-                console.error('Erro ao buscar análises:', error);
-                document.getElementById('errorMessage').style.display = 'block';
-                document.getElementById('dashboardContent').style.display = 'none';
-            }
-        }
-
-        function updateDashboard() {
-            document.getElementById('videoCount').textContent = analyticsData.stats.videos || 0;
-            document.getElementById('playlistCount').textContent = analyticsData.stats.playlists || 0;
-            document.getElementById('sessionCount').textContent = analyticsData.stats.sessions || 0;
-
-            const playlistChart = new Chart(document.getElementById('playlistChart'), {
-                type: 'bar',
-                data: {
-                    labels: analyticsData.playlists.map(p => p.name) || [],
-                    datasets: [{
-                        label: 'Reproduções',
-                        data: analyticsData.playlists.map(p => p.play_count) || [],
-                        backgroundColor: 'rgba(75, 192, 192, 0.5)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: { scales: { y: { beginAtZero: true } } }
-            });
-
-            const fileTypeChart = new Chart(document.getElementById('fileTypeChart'), {
-                type: 'pie',
-                data: {
-                    labels: Object.keys(analyticsData.file_types) || [],
-                    datasets: [{
-                        data: Object.values(analyticsData.file_types) || [],
-                        backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF']
-                    }]
-                }
-            });
-
-            const timelineChart = new Chart(document.getElementById('timelineChart'), {
-                type: 'line',
-                data: {
-                    labels: analyticsData.sessions.map(s => new Date(s.timestamp).toLocaleDateString()) || [],
-                    datasets: [{
-                        label: 'Sessões Criadas',
-                        data: analyticsData.sessions.map((_, i) => i + 1) || [],
-                        borderColor: 'rgba(255, 99, 132, 1)',
-                        fill: false
-                    }]
-                },
-                options: { scales: { y: { beginAtZero: true } } }
-            });
-
-            const topVideosTable = document.getElementById('topVideosTable');
-            topVideosTable.innerHTML = (analyticsData.top_videos || []).map(v => `
-                <tr>
-                    <td>${v.path.split(/[\\/]/).pop()}</td>
-                    <td>${v.play_count}</td>
-                    <td>${v.favorited ? '<i class="bi bi-star-fill text-warning"></i>' : '<i class="bi bi-star"></i>'}</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary" onclick="playVideo('${v.path}')">Tocar</button>
-                        <button class="btn btn-sm btn-warning" onclick="toggleFavorite('${v.path}')">${v.favorited ? 'Desfavoritar' : 'Favoritar'}</button>
-                    </td>
-                </tr>
-            `).join('');
-
-            const sessionsTable = document.getElementById('sessionsTable');
-            sessionsTable.innerHTML = (analyticsData.sessions || []).map(s => `
-                <tr>
-                    <td>${s.name}</td>
-                    <td>${(s.videos || []).map(v => v ? v.split(/[\\/]/).pop() : '-').join(', ')}</td>
-                    <td>${new Date(s.timestamp).toLocaleString()}</td>
-                    <td>
-                        <button class="btn btn-sm btn-danger" onclick="removeSession('${s.name}')">Excluir</button>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        async function playVideo(path) {
-            try {
-                const response = await fetch('/sessions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: `Ultra_${new Date().toISOString().replace(/[:.]/g, '-')}`,
-                        videos: [path, null, null, null]
-                    })
-                });
-                if (response.ok) {
-                    alert('Vídeo carregado na sessão! Volte à página inicial para reproduzir.');
-                    window.location.href = '/';
-                } else {
-                    alert('Erro ao carregar vídeo');
-                }
-            } catch (e) {
-                alert('Erro ao carregar vídeo: ' + e.message);
-            }
-        }
-
-        async function toggleFavorite(path) {
-            try {
-                const isFavorited = analyticsData.top_videos.some(v => v.path === path && v.favorited);
-                const response = await fetch('/favorites', {
-                    method: isFavorited ? 'DELETE' : 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file_path: path })
-                });
-                if (response.ok) {
-                    alert('Favorito atualizado!');
-                    fetchAnalytics();
-                } else {
-                    alert('Erro ao atualizar favorito');
-                }
-            } catch (e) {
-                alert('Erro ao atualizar favorito: ' + e.message);
-            }
-        }
-
-        async function removeSession(name) {
-            if (!confirm(`Deseja excluir a sessão "${name}"?`)) return;
-            try {
-                const response = await fetch('/remove_session', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name })
-                });
-                if (response.ok) {
-                    alert('Sessão excluída!');
-                    fetchAnalytics();
-                } else {
-                    alert('Erro ao excluir sessão');
-                }
-            } catch (e) {
-                alert('Erro ao excluir sessão: ' + e.message);
-            }
-        }
-
-        async function controlPlayers(action) {
-            try {
-                const response = await fetch('/sessions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: `Ultra_Control_${new Date().toISOString().replace(/[:.]/g, '-')}`,
-                        videos: Array(4).fill(null)
-                    })
-                });
-                if (response.ok) {
-                    alert(`Comando "${action}" enviado! Volte à página inicial para ver o efeito.`);
-                    window.location.href = '/';
-                } else {
-                    alert('Erro ao controlar players');
-                }
-            } catch (e) {
-                alert('Erro ao controlar players: ' + e.message);
-            }
-        }
-
-        async function controlSpeed() {
-            const speed = document.getElementById('speedControl').value;
-            alert(`Velocidade ajustada para ${speed}x na página principal!`);
-        }
-
-        async function toggleAutoShuffle(enable) {
-            alert(`Auto-shuffle ${enable ? 'ativado' : 'desativado'} na página principal!`);
-        }
-
-        function exportReport() {
-            const csv = [
-                'Estatísticas Gerais',
-                `Vídeos,${analyticsData.stats.videos || 0}`,
-                `Playlists,${analyticsData.stats.playlists || 0}`,
-                `Sessões,${analyticsData.stats.sessions || 0}`,
-                '',
-                'Vídeos Mais Reproduzidos',
-                'Vídeo,Reproduções,Favoritado',
-                ...(analyticsData.top_videos || []).map(v => `"${v.path}",${v.play_count},${v.favorited ? 'Sim' : 'Não'}`),
-                '',
-                'Sessões',
-                'Nome,Vídeos,Data',
-                ...(analyticsData.sessions || []).map(s => `"${s.name}","${(s.videos || []).map(v => v || '-').join(';')}","${s.timestamp}"`)
-            ].join('\n');
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'EndoFlix_Analytics.csv';
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        document.getElementById('themeToggle').addEventListener('change', (e) => {
-            document.body.classList.toggle('bg-light', e.target.checked);
-            document.body.classList.toggle('bg-dark', !e.target.checked);
-            document.body.classList.toggle('text-dark', e.target.checked);
-            document.body.classList.toggle('text-light', !e.target.checked);
-            document.querySelectorAll('.card').forEach(card => {
-                card.classList.toggle('bg-light', e.target.checked);
-                card.classList.toggle('bg-dark', !e.target.checked);
-                card.classList.toggle('text-dark', e.target.checked);
-                card.classList.toggle('text-light', !e.target.checked);
-            });
-            document.querySelectorAll('.table').forEach(table => {
-                table.classList.toggle('table-light', e.target.checked);
-                table.classList.toggle('table-dark', !e.target.checked);
-            });
-        });
-
-        fetchAnalytics();
-    </script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script type="module" src="/static/js/ultra/app.js"></script>
 </body>
 </html>

@@ -113,3 +113,67 @@ class RemoveFromPlaylist(BaseModel):
                     raise ValueError("All files must be strings")
                 validate_path_safe(f)
         return v
+
+class CreateSession(BaseModel):
+    name: str
+    videos: List[str]
+
+    @field_validator('name')
+    @classmethod
+    def name_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Session name cannot be empty")
+        return v.strip()
+
+    @field_validator('videos')
+    @classmethod
+    def videos_not_empty(cls, v):
+        if not v or len(v) == 0:
+            raise ValueError("Videos list cannot be empty")
+        return v
+
+    @field_validator('videos', mode='before')
+    @classmethod
+    def validate_videos(cls, v):
+        if isinstance(v, list):
+            for vid in v:
+                if not isinstance(vid, str):
+                    raise ValueError("All videos must be strings")
+        return v
+
+class UpdateSession(BaseModel):
+    name: str
+    videos: Optional[List[str]] = None
+    state: Optional[str] = None
+    duration: Optional[int] = None
+
+    @field_validator('name')
+    @classmethod
+    def name_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Session name cannot be empty")
+        return v.strip()
+
+    @field_validator('state')
+    @classmethod
+    def validate_state(cls, v):
+        if v and v not in ['active', 'paused', 'ended']:
+            raise ValueError("Invalid state")
+        return v
+
+    @field_validator('duration')
+    @classmethod
+    def validate_duration(cls, v):
+        if v is not None and v < 0:
+            raise ValueError("Duration cannot be negative")
+        return v
+
+class RemoveSession(BaseModel):
+    name: str
+
+    @field_validator('name')
+    @classmethod
+    def name_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Session name cannot be empty")
+        return v.strip()

@@ -67,3 +67,20 @@ $$ LANGUAGE plpgsql;
 
 -- For file type stats, use the view instead of processing in Python
 -- SELECT * FROM v_file_types;
+-- Create session_metadata table for enhanced session management
+CREATE TABLE IF NOT EXISTS session_metadata (
+    id SERIAL PRIMARY KEY,
+    session_id INTEGER REFERENCES endoflix_session(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    duration INTEGER DEFAULT 0,  -- duration in seconds
+    state VARCHAR(20) DEFAULT 'active',  -- active, paused, ended
+    user_id INTEGER REFERENCES endoflix_users(id),
+    version INTEGER DEFAULT 1  -- for optimistic locking
+);
+
+-- Indexes for session_metadata
+CREATE INDEX IF NOT EXISTS idx_session_metadata_session_id ON session_metadata(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_metadata_user_id ON session_metadata(user_id);
+CREATE INDEX IF NOT EXISTS idx_session_metadata_state ON session_metadata(state);
+CREATE INDEX IF NOT EXISTS idx_session_metadata_created_at ON session_metadata(created_at);
