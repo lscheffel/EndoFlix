@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 from db import Database
 from cache import RedisCache
-from utils import get_media_files
+from utils import get_media_files, normalize_path
 
 class PlaylistService:
     def __init__(self, db: Database, cache: RedisCache):
@@ -13,6 +13,7 @@ class PlaylistService:
 
     def create_playlist(self, name: str, files: list, source_folder: str) -> dict:
         """Create a new playlist, insert into DB, invalidate cache, return dict."""
+        source_folder = normalize_path(source_folder)
         with self.db.get_connection() as conn:
             with conn.cursor() as cur:
                 try:
@@ -72,6 +73,7 @@ class PlaylistService:
 
     def update_playlist(self, name: str, source_folder: str, temp_playlist: Optional[str] = None) -> dict:
         """Update playlist by rescanning source_folder, incorporating temp_playlist if provided."""
+        source_folder = normalize_path(source_folder)
         with self.db.get_connection() as conn:
             with conn.cursor() as cur:
                 try:
@@ -199,6 +201,7 @@ class PlaylistService:
 
     def import_playlist(self, name: str, files: list, source_folder: str, play_count: int = 0) -> dict:
         """Import playlist."""
+        source_folder = normalize_path(source_folder)
         with self.db.get_connection() as conn:
             with conn.cursor() as cur:
                 try:

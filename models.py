@@ -4,15 +4,13 @@ from typing import List, Optional
 import os
 
 def validate_path_safe(path: str) -> str:
-    """Validate that path does not contain traversal sequences and is not absolute."""
+    """Validate that path does not contain traversal sequences."""
     if '..' in path:
         raise ValueError("Path contains directory traversal")
-    if os.path.isabs(path):
-        raise ValueError("Absolute paths are not allowed")
     return path
 
 def validate_source_folder_path(path: str) -> str:
-    """Validate that path does not contain traversal sequences. Allows absolute paths."""
+    """Validate that path does not contain traversal sequences. Absolute paths are permitted for source_folder."""
     if '..' in path:
         raise ValueError("Path contains directory traversal")
     return path
@@ -46,11 +44,6 @@ class PlaylistCreate(BaseModel):
                 validate_path_safe(f)
         return v
 
-    @field_validator('source_folder')
-    @classmethod
-    def validate_source_folder(cls, v):
-        validate_source_folder_path(v)
-        return v
 
 class SaveTempPlaylist(BaseModel):
     temp_name: str
@@ -85,11 +78,6 @@ class UpdatePlaylist(BaseModel):
             raise ValueError("Name cannot be empty")
         return v.strip()
 
-    @field_validator('source_folder')
-    @classmethod
-    def validate_source_folder(cls, v):
-        validate_source_folder_path(v)
-        return v
 
 class RemoveFromPlaylist(BaseModel):
     name: str

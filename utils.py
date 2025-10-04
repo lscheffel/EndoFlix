@@ -11,6 +11,17 @@ from db import Database
 from config import Config
 from cache import RedisCache
 
+def normalize_path(path: str) -> str:
+    """Convert absolute paths to relative paths based on BASE_VIDEO_DIR."""
+    if not os.path.isabs(path):
+        return path  # Already relative
+    # Convert absolute to relative from BASE_VIDEO_DIR
+    try:
+        return os.path.relpath(path, Config.BASE_VIDEO_DIR)
+    except ValueError:
+        # If relpath fails, keep as absolute
+        return path
+
 DB_POOL = Database()  # Create database instance
 REDIS_CLIENT = RedisCache()  # Create cache instance
 FFPROBE_PATH = Config.FFPROBE_PATH

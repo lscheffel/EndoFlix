@@ -34,6 +34,7 @@ class Config:
     FFMPEG_PATH: str = os.getenv('FFMPEG_PATH', r"C:\Program Files\FFMPEG\bin\ffmpeg.exe" if platform.system() == 'Windows' else 'ffmpeg')
     REDIS_SERVER_PATH: str = r"C:\Program Files\Redis\redis-server.exe"
     TRANSCODE_DIR: Path = Path("transcode")
+    BASE_VIDEO_DIR: Path = Path(os.getenv('BASE_VIDEO_DIR', 'videos'))
 
     # Processing
     MAX_WORKERS: int = 8

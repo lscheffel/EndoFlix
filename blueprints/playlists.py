@@ -8,7 +8,7 @@ from io import StringIO
 from flask_login import login_required
 from db import Database
 from cache import RedisCache
-from utils import get_media_files
+from utils import get_media_files, normalize_path
 from thumbnail_processor import ThumbnailProcessor
 from models import PlaylistCreate, SaveTempPlaylist, RemovePlaylist, UpdatePlaylist, RemoveFromPlaylist
 from pydantic import ValidationError
@@ -29,7 +29,12 @@ def playlists():
             return jsonify(playlists)
         else:
             try:
-                data = PlaylistCreate(**request.get_json())
+                json_data = request.get_json()
+                try:
+                    json_data['source_folder'] = normalize_path(json_data['source_folder'])
+                except ValueError:
+                    json_data['source_folder'] = ''  # default relative path
+                data = PlaylistCreate(**json_data)
             except ValidationError as e:
                 return jsonify({'success': False, 'error': str(e)}), 400
             playlist_service.create_playlist(data.name, data.files, data.source_folder)
@@ -74,7 +79,12 @@ def remove_playlist():
 @login_required
 def update_playlist():
     try:
-        data = UpdatePlaylist(**request.get_json())
+        json_data = request.get_json()
+        try:
+            json_data['source_folder'] = normalize_path(json_data['source_folder'])
+        except ValueError:
+            json_data['source_folder'] = ''  # default relative path
+        data = UpdatePlaylist(**json_data)
     except ValidationError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     try:
@@ -147,6 +157,11 @@ def import_playlist():
 
         if not name or not files:
             return jsonify({'success': False, 'error': 'Dados inválidos no arquivo'}), 400
+
+        try:
+            source_folder = normalize_path(source_folder)
+        except ValueError:
+            source_folder = ''  # default relative path
 
         playlist_service.import_playlist(name, files, source_folder, play_count)
         return jsonify({'success': True})
