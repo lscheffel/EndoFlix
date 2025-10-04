@@ -36,8 +36,8 @@ class ThumbnailTester:
         """Create a test playlist with the sample videos."""
         logger.info("Setting up test playlist...")
 
-    # Get relative paths for the test videos
-    video_files = [str(self.test_dir / "test_video1.mp4")]
+        # Get relative paths for the test videos
+        video_files = [str(self.test_dir / "test_video1.mp4")]
 
         if not video_files:
             raise ValueError("No test video files found!")

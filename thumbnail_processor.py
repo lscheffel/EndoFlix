@@ -1,5 +1,4 @@
 import os
-import subprocess
 import logging
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -8,6 +7,7 @@ import time
 from config import Config
 from db import Database
 from utils import get_video_metadata_cached as get_video_metadata
+import ffmpeg
 try:
     import psutil
     HAS_PSUTIL = True
@@ -28,11 +28,13 @@ class ThumbnailProcessor:
         self.batch_size = self.config.THUMB_BATCH_SIZE
 
     @staticmethod
-    def generate_thumbnail(video_path: str, output_path: str, ffmpeg_path: str, thumb_size: int, thumb_quality: int, extraction_point: float, ffmpeg_timeout: int) -> bool:
+    def generate_thumbnail(video_path: str, output_path: str, thumb_size: int, thumb_quality: int, extraction_point: float, ffmpeg_timeout: int) -> bool:
         """Generate a thumbnail for a single video file."""
         try:
             # Get video duration
-            metadata = get_video_metadata(video_path)
+            import os
+            stats = os.stat(video_path)
+            metadata = get_video_metadata(video_path, stats.st_size, stats.st_mtime)
             duration = metadata.get('duration_seconds', 0)
             if duration <= 0:
                 logging.warning(f"Could not get duration for {video_path}")
@@ -41,32 +43,37 @@ class ThumbnailProcessor:
             # Calculate timestamp for extraction (10% into video)
             timestamp = duration * extraction_point
 
-            # FFmpeg command to extract frame, scale, and save as WebP
-            cmd = [
-                ffmpeg_path,
-                '-ss', str(timestamp),  # Seek to timestamp
-                '-i', video_path,       # Input file
-                '-vframes', '1',        # Extract one frame
-                '-vf', f'scale={thumb_size}:{thumb_size}:force_original_aspect_ratio=decrease,pad={thumb_size}:{thumb_size}:(ow-iw)/2:(oh-ih)/2',  # Scale and pad to square
-                '-pix_fmt', 'yuv420p',  # Pixel format
-                '-c:v', 'libwebp',      # Use libwebp encoder
-                '-q:v', str(thumb_quality),  # Quality for WebP
-                '-f', 'webp',           # Output format
-                '-y',                   # Overwrite output
-                output_path
-            ]
+            # Build FFmpeg pipeline using python-ffmpeg
+            stream = (
+                ffmpeg
+                .input(video_path, ss=timestamp)
+                .filter('scale', thumb_size, thumb_size, force_original_aspect_ratio='decrease')
+                .filter('pad', thumb_size, thumb_size, '(ow-iw)/2', '(oh-ih)/2')
+                .output(
+                    output_path,
+                    vframes=1,
+                    pix_fmt='yuv420p',
+                    vcodec='libwebp',
+                    **{'q:v': str(thumb_quality)},
+                    f='webp',
+                    y=None
+                )
+            )
 
-            logging.debug(f"Running FFmpeg command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=False, timeout=ffmpeg_timeout)
-            if result.returncode == 0:
+            logging.debug(f"Running FFmpeg pipeline for {video_path}")
+            try:
+                out, err = stream.run(capture_stderr=True, overwrite_output=True)
+                if err:
+                    logging.warning(f"FFmpeg stderr for {video_path}: {err}")
                 logging.info(f"Thumbnail generated for {video_path}")
                 return True
-            else:
-                stderr_text = result.stderr.decode('utf-8', errors='replace') if result.stderr else 'No stderr'
-                logging.error(f"FFmpeg failed for {video_path} (exit code {result.returncode}): {stderr_text}")
+            except ffmpeg.Error as e:
+                logging.error(f"FFmpeg error generating thumbnail for {video_path}: {e}")
+                if hasattr(e, 'stderr') and e.stderr:
+                    logging.error(f"FFmpeg stderr: {e.stderr.decode('utf-8', errors='replace')}")
                 return False
-        except subprocess.TimeoutExpired:
-            logging.error(f"Timeout generating thumbnail for {video_path}")
+        except Exception as e:
+            logging.error(f"FFmpeg error generating thumbnail for {video_path}: {e}")
             return False
         except Exception as e:
             logging.error(f"Error generating thumbnail for {video_path}: {e}")
@@ -162,7 +169,6 @@ class ThumbnailProcessor:
                             self.generate_thumbnail,
                             video_path,
                             str(output_path),
-                            self.ffmpeg_path,
                             self.thumb_size,
                             self.thumb_quality,
                             self.extraction_point,
