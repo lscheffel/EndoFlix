@@ -36,8 +36,8 @@ class ThumbnailTester:
         """Create a test playlist with the sample videos."""
         logger.info("Setting up test playlist...")
 
-        # Get absolute paths for the test videos
-        video_files = [str((self.test_dir / "test_video1.mp4").absolute())]
+    # Get relative paths for the test videos
+    video_files = [str(self.test_dir / "test_video1.mp4")]
 
         if not video_files:
             raise ValueError("No test video files found!")
@@ -49,7 +49,7 @@ class ThumbnailTester:
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO endoflix_playlist (name, files, play_count, source_folder) VALUES (%s, %s, 0, %s) ON CONFLICT (name) DO UPDATE SET files = EXCLUDED.files, source_folder = EXCLUDED.source_folder",
-                    (self.playlist_name, video_files, str(self.test_dir.absolute()))
+                    (self.playlist_name, video_files, str(self.test_dir))
                 )
                 conn.commit()
 

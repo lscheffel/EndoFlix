@@ -116,11 +116,11 @@ class TestPlaylists:
             with test_db.cursor() as cur:
                 cur.execute(
                     "INSERT INTO endoflix_playlist (name, files, source_folder) VALUES (%s, %s, %s)",
-                    ('update_test', ['old.mp4'], temp_dir)
+                    ('test_update', ['old.mp4'], temp_dir)
                 )
                 test_db.commit()
             data = {
-                'name': 'update_test',
+                'name': 'test_update',
                 'source_folder': temp_dir
             }
             response = authenticated_client.post('/update_playlist', json=data)

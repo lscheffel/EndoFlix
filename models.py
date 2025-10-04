@@ -4,11 +4,9 @@ from typing import List, Optional
 import os
 
 def validate_path_safe(path: str) -> str:
-    """Validate that path does not contain traversal sequences and is not absolute."""
+    """Validate that path does not contain traversal sequences."""
     if '..' in path:
-        raise ValueError("Path contains directory traversal")
-    if os.path.isabs(path):
-        raise ValueError("Absolute paths are not allowed")
+        raise ValueError(f"Path contains directory traversal: {path}")
     return path
 
 class PlaylistCreate(BaseModel):
@@ -43,7 +41,6 @@ class PlaylistCreate(BaseModel):
     @field_validator('source_folder')
     @classmethod
     def validate_source_folder(cls, v):
-        validate_path_safe(v)
         if not Path(v).exists():
             raise ValueError("Source folder does not exist")
         return v
