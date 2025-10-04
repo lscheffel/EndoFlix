@@ -24,6 +24,10 @@ class UltraControlService:
         """Start the real-time update thread"""
         if not self.running:
             self.running = True
+            # Emit initial update on start
+            data = self._get_real_time_analytics()
+            self.socketio.emit('ultra_analytics_update', data, namespace='/ultra')
+            logging.info("UltraControlService initial update emitted")
             self.thread = threading.Thread(target=self._real_time_loop, daemon=True)
             self.thread.start()
             logging.info("UltraControlService real-time updates started")
@@ -39,13 +43,13 @@ class UltraControlService:
         """Main loop for emitting real-time analytics data"""
         while self.running:
             try:
+                time.sleep(30)  # Update every 30 seconds
                 data = self._get_real_time_analytics()
                 logging.info(f"Emitting real-time analytics update: stats={data.get('stats', {})}")
                 self.socketio.emit('ultra_analytics_update', data, namespace='/ultra')
-                time.sleep(5)  # Update every 5 seconds
             except Exception as e:
                 logging.error(f"Error in real-time loop: {e}")
-                time.sleep(10)  # Wait longer on error
+                time.sleep(60)  # Wait longer on error
 
     def _get_real_time_analytics(self):
         """Fetch real-time analytics data"""

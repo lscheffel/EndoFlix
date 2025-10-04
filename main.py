@@ -116,6 +116,9 @@ app.register_blueprint(video_bp)
 @socketio.on('connect', namespace='/ultra')
 def handle_ultra_connect():
     logging.info("Client connected to ultra namespace")
+    # Emit initial analytics data on connect
+    data = ultra_service._get_real_time_analytics()
+    emit('ultra_analytics_update', data)
     emit('connected', {'status': 'Ultra mode connected'})
 
 @socketio.on('disconnect', namespace='/ultra')
