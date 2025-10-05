@@ -5,6 +5,7 @@ import base64
 import json
 import logging
 from datetime import datetime
+from urllib.parse import unquote
 from flask_login import login_required
 from db import Database
 from config import Config
@@ -22,6 +23,9 @@ video_views_counter = Counter('video_views', 'Number of video views')
 @video_bp.route('/video/<path:filename>')
 @login_required
 def serve_video(filename):
+    filename = unquote(filename)
+    if filename.startswith('/'):
+        filename = filename.lstrip('/')
     return serve_video_range(Path(filename))
 
 def serve_video_range(input_path):

@@ -199,3 +199,29 @@ def ultra_batch_commands():
     except Exception as e:
         logging.error(f"Error processing ultra batch commands: {e}")
         return jsonify({'error': str(e)}), 500
+
+@analytics_bp.route('/manage_view_counts', methods=['POST'])
+@login_required
+def manage_view_counts():
+    try:
+        data = request.get_json()
+        action = data.get('action')
+        file_paths = data.get('file_paths', [])
+        if not action or action not in ['reset', 'increment', 'decrement']:
+            return jsonify({'success': False, 'error': 'Invalid action'}), 400
+        if not file_paths or not isinstance(file_paths, list):
+            return jsonify({'success': False, 'error': 'File paths required'}), 400
+
+        with DB_POOL.get_connection() as conn:
+            with conn.cursor() as cur:
+                if action == 'reset':
+                    cur.execute("UPDATE endoflix_files SET view_count = 0 WHERE file_path = ANY(%s)", (file_paths,))
+                elif action == 'increment':
+                    cur.execute("UPDATE endoflix_files SET view_count = view_count + 1 WHERE file_path = ANY(%s)", (file_paths,))
+                elif action == 'decrement':
+                    cur.execute("UPDATE endoflix_files SET view_count = GREATEST(view_count - 1, 0) WHERE file_path = ANY(%s)", (file_paths,))
+                conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        logging.error(f"Error managing view counts: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500

@@ -81,14 +81,13 @@ function updateTables(data) {
     const topVideosTable = document.getElementById('topVideosTable');
     topVideosTable.innerHTML = (data.top_videos || []).map(v => `
         <tr>
-            <td>${v.path.split(/[\\/]/).pop()}</td>
+            <td><a href="/player?video=${encodeURIComponent(v.path)}" class="text-light">${v.path.split(/[\\/]/).pop()}</a></td>
             <td>${v.play_count}</td>
             <td>${formatTime(v.total_play_time || 0)}</td>
             <td>${v.engagement_score || 0}</td>
             <td>${v.favorited ? '<i class="bi bi-star-fill text-warning"></i>' : '<i class="bi bi-star"></i>'}</td>
             <td>
-                <button class="btn btn-sm btn-primary" onclick="playVideo('${v.path}')">Tocar</button>
-                <button class="btn btn-sm btn-warning" onclick="toggleFavorite('${v.path}')">${v.favorited ? 'Desfavoritar' : 'Favoritar'}</button>
+                <button class="btn btn-sm btn-warning" onclick="toggleFavorite('${encodeURIComponent(v.path)}')">${v.favorited ? 'Desfavoritar' : 'Favoritar'}</button>
             </td>
         </tr>
     `).join('');

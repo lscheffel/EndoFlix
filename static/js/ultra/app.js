@@ -3,6 +3,7 @@ import { updateDashboard, showError, loadSessions } from './dashboard.js';
 import { initControls } from './controls.js';
 
 let analyticsData = {};
+window.analyticsData = analyticsData;
 
 async function fetchAnalytics(params = {}) {
     try {
@@ -13,6 +14,7 @@ async function fetchAnalytics(params = {}) {
         const response = await fetch(url);
         if (!response.ok) throw new Error('Erro ao carregar análises');
         analyticsData = await response.json();
+        window.analyticsData = analyticsData;
         updateDashboard(analyticsData);
     } catch (error) {
         console.error('Erro ao buscar análises:', error);

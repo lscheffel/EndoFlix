@@ -151,6 +151,12 @@
                 </thead>
                 <tbody id="topVideosTable"></tbody>
             </table>
+            <div class="mb-3">
+                <button class="btn btn-success me-2" onclick="playAllTopVideos()">Reproduzir Todos (Criar Playlist "Mais Assistidos")</button>
+                <button class="btn btn-warning me-2" onclick="batchToggleFavorites()">Alternar Favoritos em Lote</button>
+                <button class="btn btn-info me-2" onclick="manageViewCounts()">Gerenciar Contagens de Visualização</button>
+                <button class="btn btn-secondary" onclick="exportTopVideos()">Exportar Vídeos Mais Reproduzidos</button>
+            </div>
             <nav id="paginationNav" aria-label="Paginação dos vídeos">
                 <ul class="pagination justify-content-center" id="paginationControls"></ul>
             </nav>
@@ -169,32 +175,6 @@
                 </thead>
                 <tbody id="sessionsTable"></tbody>
             </table>
-            <div class="control-panel">
-                <h3>Controles Avançados</h3>
-                <div class="mb-3">
-                    <button class="btn btn-primary btn-compact me-2" onclick="controlPlayers('play')">Reproduzir Todos</button>
-                    <button class="btn btn-warning btn-compact me-2" onclick="controlPlayers('pause')">Pausar Todos</button>
-                    <select id="speedControl" class="form-select d-inline-block w-auto" onchange="controlSpeed()">
-                        <option value="0.5">0.5x</option>
-                        <option value="1" selected>1x</option>
-                        <option value="1.5">1.5x</option>
-                        <option value="2">2x</option>
-                    </select>
-                    <span id="currentSpeed" class="ms-2 text-muted">Velocidade atual: 1x</span>
-                </div>
-                <div class="mb-3">
-                    <button class="btn btn-success btn-compact me-2" onclick="toggleAutoShuffle(true)">Ativar Auto-Shuffle</button>
-                    <button class="btn btn-danger btn-compact me-2" onclick="toggleAutoShuffle(false)">Desativar Auto-Shuffle</button>
-                    <input type="number" id="shuffleInterval" class="form-control d-inline-block w-auto" min="1" value="3" style="width: 80px;">
-                    <span id="shuffleStatus" class="ms-2 text-muted">Shuffle: Desativado</span>
-                </div>
-                <div class="mb-3">
-                    <button class="btn btn-info btn-compact" onclick="exportReport()">Exportar Relatório (CSV)</button>
-                </div>
-                <div class="mb-3">
-                    <small class="text-muted">Status: <span id="controlStatus">Pronto</span></small>
-                </div>
-            </div>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

@@ -52,9 +52,12 @@
                 <li><strong>Filtros Melhorados:</strong> Opções de filtragem aprimoradas para melhor organização dos vídeos.</li>
                 <li><strong>Alternâncias de Loop:</strong> Opções para repetir vídeos individuais ou playlists.</li>
                 <li><strong>Histórico de Playlists Recentes:</strong> Acesso a playlists usadas recentemente.</li>
-                <li><strong>Miniaturas:</strong> Exibição de miniaturas de vídeo para identificação rápida.</li>
-                <li><strong>Operações em Lote:</strong> Execute ações em vários vídeos de uma vez.</li>
-                <li><strong>Cabeçalhos Unificados:</strong> Design consistente de cabeçalho em toda a aplicação.</li>
+                <li><strong>Ultra Mode:</strong> Dashboard analítico com estatísticas em tempo real, gráficos de uso de playlists, tipos de arquivo, timeline de sessões e tabela de vídeos mais reproduzidos. Exportação de relatórios em CSV.</li>
+                <li><strong>Sistema de Autenticação:</strong> Login e gerenciamento de usuários.</li>
+                <li><strong>Processamento de Vídeos Cross-Platform:</strong> Usando python-ffmpeg para extração de metadados e processamento.</li>
+                <li><strong>Cabeçalho Comum:</strong> Design consistente de cabeçalho em toda a aplicação.</li>
+                <li><strong>Player de Vídeo Dedicado:</strong> Página dedicada para reprodução de vídeos individuais.</li>
+                <li><strong>Operações em Lote:</strong> Execute ações em vários vídeos de uma vez, como adicionar/remover favoritos, remover de playlists.</li>
             </ul>
         </div>
         <div class="readme-section">
@@ -164,15 +167,82 @@ CREATE TABLE endoflix_session (
         <div class="readme-section">
             <h2>Estrutura do Projeto</h2>
             <pre>EndoFlix/
-├── main.py               # Backend Flask
-├── templates/
-│   └── base.html         # Frontend HTML/JS/CSS
-├── venv/                 # Ambiente virtual (opcional)
-└── README.md             # Este arquivo</pre>
+├── main.py                    # Backend Flask principal
+├── config.py                  # Configurações da aplicação
+├── auth.py                    # Sistema de autenticação
+├── db.py                      # Conexão e operações do banco de dados
+├── models.py                  # Modelos de dados
+├── utils.py                   # Utilitários diversos
+├── file_processor.py          # Processamento de arquivos de vídeo
+├── cache.py                   # Sistema de cache com Redis
+├── limiter.py                 # Controle de taxa de requisições
+├── blueprints/                # Módulos da aplicação
+│   ├── __init__.py
+│   ├── main.py                # Rotas principais
+│   ├── auth.py                # Autenticação
+│   ├── analytics.py           # Analytics e Ultra Mode
+│   ├── favorites.py           # Favoritos
+│   ├── playlists.py           # Playlists
+│   ├── scan.py                # Escaneamento
+│   ├── sessions.py            # Sessões
+│   └── video.py               # Vídeo
+├── services/                  # Serviços
+│   ├── playlist_service.py
+│   └── ultra_control_service.py
+├── Static/                    # Arquivos estáticos
+│   ├── favicon.ico
+│   ├── js/
+│   │   ├── header.js
+│   │   └── ultra/
+│   │       ├── app.js
+│   │       ├── controls.js
+│   │       ├── dashboard.js
+│   │       └── websocket.js
+│   └── keymap.js
+├── Templates/                 # Templates HTML
+│   ├── base.html
+│   ├── header.html
+│   ├── login.html
+│   ├── player.html
+│   ├── ultra.html
+│   └── keymaps.html
+├── tests/                     # Testes
+├── logs/                      # Logs da aplicação
+├── monitoring/                # Monitoramento
+│   └── prometheus.yml
+├── scripts/                   # Scripts auxiliares
+│   └── init.sql
+├── transcode/                 # Transcodificação
+└── videos/                    # Vídeos (opcional)</pre>
         </div>
         <div class="readme-section">
             <h2>Versões</h2>
             <ul>
+                <li><strong>v5.1.0 (2025-10-05):</strong>
+                    <ul>
+                        <li>Adicionado Ultra Mode com analytics em tempo real.</li>
+                        <li>Sistema de autenticação completo.</li>
+                        <li>Processamento de vídeos cross-platform com python-ffmpeg.</li>
+                        <li>Cabeçalho comum em todas as páginas.</li>
+                        <li>Player de vídeo dedicado.</li>
+                        <li>Operações em lote para gerenciamento de vídeos.</li>
+                        <li>Removidas referências a thumbnails descontinuadas.</li>
+                    </ul>
+                </li>
+                <li><strong>v5.0.0 (2025-10-03):</strong>
+                    <ul>
+                        <li>Sistema completo de autenticação e segurança.</li>
+                        <li>Sistema de favoritos para vídeos.</li>
+                        <li>Analytics e monitoramento avançado.</li>
+                        <li>Containerização com Docker e docker-compose.</li>
+                        <li>Arquitetura modular com blueprints.</li>
+                        <li>Melhorias significativas de performance e segurança.</li>
+                        <li>Pydantic para validação de dados.</li>
+                        <li>Sistema de logs estruturado em JSON.</li>
+                        <li>Integração com Redis para cache.</li>
+                        <li>CI/CD com GitHub Actions.</li>
+                    </ul>
+                </li>
                 <li><strong>v3.0.0 (2025-05-11):</strong>
                     <ul>
                         <li>Refatoração completa: removeu JSON, implementou PostgreSQL.</li>

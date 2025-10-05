@@ -49,9 +49,9 @@ def populate_sample_data():
 
                 # Insert sample sessions
                 sessions = [
-                    ('session_2024-10-01T10-00-00_1', ['/videos/sample1.mp4', '/videos/sample2.mkv']),
-                    ('session_2024-10-02T14-30-00_2', ['/videos/sample3.avi']),
-                    ('session_2024-10-03T09-15-00_3', ['/videos/sample4.mp4', '/videos/sample5.webm', '/videos/sample1.mp4']),
+                    ('session_2024-10-01T10-00-00', ['/videos/sample1.mp4', '/videos/sample2.mkv']),
+                    ('session_2024-10-02T14-30-00', ['/videos/sample3.avi']),
+                    ('session_2024-10-03T09-15-00', ['/videos/sample4.mp4', '/videos/sample5.webm', '/videos/sample1.mp4']),
                 ]
 
                 for name, videos in sessions:

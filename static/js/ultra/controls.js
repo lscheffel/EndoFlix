@@ -28,6 +28,7 @@ export async function playVideo(path) {
 }
 
 export async function toggleFavorite(path) {
+    path = decodeURIComponent(path);
     try {
         const isFavorited = analyticsData.top_videos.some(v => v.path === path && v.favorited);
         const response = await fetch('/favorites', {
@@ -91,29 +92,100 @@ export function toggleAutoShuffle(enable) {
     showAlert(`Auto-shuffle ${enable ? 'ativado' : 'desativado'} com intervalo de ${interval}s!`);
 }
 
-export function exportReport() {
+export async function playAllTopVideos() {
+    const videos = analyticsData.top_videos || [];
+    if (videos.length === 0) {
+        showAlert('Nenhum vídeo encontrado para criar playlist');
+        return;
+    }
+    const name = 'Mais Assistidos';
+    const files = videos.map(v => v.path);
+    try {
+        const response = await fetch('/playlists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, files })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showAlert(`Playlist "${name}" criada com ${files.length} vídeos`);
+            window.location.href = '/';
+        } else {
+            showAlert(`Erro ao criar playlist: ${result.error}`);
+        }
+    } catch (e) {
+        showAlert(`Erro ao criar playlist: ${e.message}`);
+    }
+}
+
+export async function batchToggleFavorites() {
+    const videos = analyticsData.top_videos || [];
+    if (videos.length === 0) {
+        showAlert('Nenhum vídeo encontrado');
+        return;
+    }
+    // Toggle all: if any is favorited, remove all, else add all
+    const anyFavorited = videos.some(v => v.favorited);
+    const filePaths = videos.map(v => v.path);
+    try {
+        const response = await fetch('/favorites', {
+            method: anyFavorited ? 'DELETE' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_paths: filePaths })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showAlert(anyFavorited ? 'Removidos dos favoritos' : 'Adicionados aos favoritos');
+            ws.requestUpdate();
+        } else {
+            showAlert(`Erro: ${result.error}`);
+        }
+    } catch (e) {
+        showAlert(`Erro: ${e.message}`);
+    }
+}
+
+export async function manageViewCounts() {
+    const action = prompt('Escolha ação: reset (zerar contagens), increment (incrementar), decrement (decrementar)');
+    if (!action || !['reset', 'increment', 'decrement'].includes(action)) {
+        showAlert('Ação inválida');
+        return;
+    }
+    const videos = analyticsData.top_videos || [];
+    if (videos.length === 0) {
+        showAlert('Nenhum vídeo encontrado');
+        return;
+    }
+    const filePaths = videos.map(v => v.path);
+    try {
+        const response = await fetch('/manage_view_counts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, file_paths: filePaths })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showAlert(`Contagens de visualização ${action}adas`);
+            ws.requestUpdate();
+        } else {
+            showAlert(`Erro: ${result.error}`);
+        }
+    } catch (e) {
+        showAlert(`Erro: ${e.message}`);
+    }
+}
+
+export function exportTopVideos() {
     const csv = [
-        'Estatísticas Gerais',
-        `Vídeos,${analyticsData.stats.videos || 0}`,
-        `Playlists,${analyticsData.stats.playlists || 0}`,
-        `Sessões,${analyticsData.stats.sessions || 0}`,
-        `Sessões Ativas,${analyticsData.stats.active_sessions || 0}`,
-        `Tempo Total de Reprodução,${analyticsData.stats.total_play_time || 0}`,
-        `Atividade 24h,${analyticsData.stats.user_activity_24h || 0}`,
-        '',
         'Vídeos Mais Reproduzidos',
         'Vídeo,Reproduções,Tempo Total,Engajamento,Favoritado',
-        ...(analyticsData.top_videos || []).map(v => `"${v.path}",${v.play_count},${v.total_play_time || 0},${v.engagement_score || 0},${v.favorited ? 'Sim' : 'Não'}`),
-        '',
-        'Sessões',
-        'Nome,Vídeos,Data',
-        ...(analyticsData.sessions || []).map(s => `"${s.name}","${(s.videos || []).map(v => v || '-').join(';')}","${s.timestamp}"`)
+        ...(analyticsData.top_videos || []).map(v => `"${v.path}",${v.play_count},${v.total_play_time || 0},${v.engagement_score || 0},${v.favorited ? 'Sim' : 'Não'}`)
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'EndoFlix_Ultra_Analytics.csv';
+    a.download = 'EndoFlix_Top_Videos.csv';
     a.click();
     URL.revokeObjectURL(url);
 }
@@ -137,7 +209,7 @@ function showAlert(message) {
 window.playVideo = playVideo;
 window.toggleFavorite = toggleFavorite;
 window.removeSession = removeSession;
-window.controlPlayers = controlPlayers;
-window.controlSpeed = controlSpeed;
-window.toggleAutoShuffle = toggleAutoShuffle;
-window.exportReport = exportReport;
+window.playAllTopVideos = playAllTopVideos;
+window.batchToggleFavorites = batchToggleFavorites;
+window.manageViewCounts = manageViewCounts;
+window.exportTopVideos = exportTopVideos;

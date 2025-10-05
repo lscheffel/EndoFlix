@@ -12,7 +12,7 @@ def validate_path_safe(path: str) -> str:
 class PlaylistCreate(BaseModel):
     name: str
     files: List[str]
-    source_folder: str
+    source_folder: Optional[str] = None
 
     @field_validator('name')
     @classmethod
@@ -41,7 +41,7 @@ class PlaylistCreate(BaseModel):
     @field_validator('source_folder')
     @classmethod
     def validate_source_folder(cls, v):
-        if not Path(v).exists():
+        if v is not None and not Path(v).exists():
             raise ValueError("Source folder does not exist")
         return v
 
