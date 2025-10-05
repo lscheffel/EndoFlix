@@ -87,4 +87,3 @@ tests/
 
 # Video processing temp files
 transcode/
-test_thumbnails/

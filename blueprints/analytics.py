@@ -73,9 +73,9 @@ def analytics():
                 sort_order = request.args.get('sort_order', 'desc')
 
                 # Whitelist allowed sort columns for security
-                allowed_sort = {'view_count', 'total_play_time', 'engagement_score', 'file_path'}
+                allowed_sort = {'view_count', 'total_play_time', 'engagement_score', 'file_path', 'last_viewed_at'}
                 if sort_by not in allowed_sort:
-                    sort_by = 'view_count'
+                    sort_by = 'last_viewed_at'
                 if sort_order not in ['asc', 'desc']:
                     sort_order = 'desc'
 
@@ -87,12 +87,13 @@ def analytics():
                            view_count * 10 AS total_play_time,
                            view_count + CASE WHEN is_favorite THEN 10 ELSE 0 END AS engagement_score
                     FROM endoflix_files
+                    WHERE last_viewed_at IS NOT NULL
                 """
                 where_clause = ""
                 params = []
 
                 if search:
-                    where_clause = "WHERE file_path ILIKE %s"
+                    where_clause = "AND file_path ILIKE %s"
                     params.append(f'%{search}%')
 
                 order_clause = f"ORDER BY {sort_by} {sort_order}"

@@ -52,6 +52,7 @@ def serve_video_range(input_path):
                     index_file(conn, file_data)
                 cur.execute("UPDATE endoflix_files SET view_count = view_count + 1, last_viewed_at = CURRENT_TIMESTAMP WHERE file_path = %s", (input_path_str,))
                 conn.commit()
+                logging.info(f"Incremented view_count for {input_path_str}")
             except Exception as e:
                 conn.rollback()
                 logging.error(f"Erro ao atualizar visualizações para {input_path_str}: {e}")

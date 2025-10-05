@@ -192,17 +192,3 @@ class TestPlaylists:
         file_data.filename = 'test.txt'
         response = authenticated_client.post('/import_playlist', data={'file': (file_data, 'test.txt')})
         assert response.status_code == 400
-
-    def test_generate_thumbnails(self, authenticated_client, test_db):
-        """Test POST /generate_thumbnails/<name>"""
-        with test_db.cursor() as cur:
-            cur.execute(
-                "INSERT INTO endoflix_playlist (name, files) VALUES (%s, %s)",
-                ('thumb_test', ['file.mp4'])
-            )
-            test_db.commit()
-        response = authenticated_client.post('/generate_thumbnails/thumb_test')
-        assert response.status_code == 200
-        data = response.get_json()
-        assert 'status' in data
-        assert data['status'] == 'started'

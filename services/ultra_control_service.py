@@ -93,7 +93,8 @@ class UltraControlService:
                                view_count * 10 AS total_play_time,
                                view_count + CASE WHEN is_favorite THEN 10 ELSE 0 END AS engagement_score
                         FROM endoflix_files
-                        ORDER BY view_count DESC LIMIT 10
+                        WHERE last_viewed_at IS NOT NULL
+                        ORDER BY last_viewed_at DESC, view_count DESC LIMIT 10
                     """)
                     top_videos = [{
                         "path": row[0],
