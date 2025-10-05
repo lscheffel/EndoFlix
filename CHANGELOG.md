@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2025-10-05
+
+### 🐛 Bug Fixes
+- Resolved merge conflicts in limiter configuration
+- Fixed Redis connection handling for rate limiting
+
+### ⚡ Performance Improvements
+- Optimized database query performance
+- Enhanced caching mechanisms for better response times
+
+---
+
 ## [5.0.0] - 2025-10-03
 
 ### 🚀 Major Features
