@@ -9,7 +9,6 @@ from flask_login import login_required
 from db import Database
 from cache import RedisCache
 from utils import get_media_files
-from thumbnail_processor import ThumbnailProcessor
 from models import PlaylistCreate, SaveTempPlaylist, RemovePlaylist, UpdatePlaylist, RemoveFromPlaylist
 from pydantic import ValidationError
 from services.playlist_service import PlaylistService
@@ -152,19 +151,4 @@ def import_playlist():
         return jsonify({'success': True})
     except Exception as e:
         logging.error(f"Erro ao importar playlist: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@playlists_bp.route('/generate_thumbnails/<playlist_name>', methods=['POST'])
-@login_required
-def generate_thumbnails(playlist_name):
-    try:
-        def run_in_background():
-            processor = ThumbnailProcessor()
-            processor.process_playlist_thumbnails(playlist_name)
-
-        thread = threading.Thread(target=run_in_background, daemon=True)
-        thread.start()
-        return jsonify({"status": "started", "message": "Thumbnail generation started in background"})
-    except Exception as e:
-        logging.error(f"Erro ao iniciar geração de thumbnails para playlist {playlist_name}: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500

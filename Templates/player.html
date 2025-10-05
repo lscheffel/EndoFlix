@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EndoFlix - Player</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { overflow: hidden; background: #000; }
+        .video-container { position: relative; width: 100vw; height: 100vh; }
+        .video-player { width: 100%; height: 100%; object-fit: contain; }
+        .error-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); color: red; text-align: center; padding-top: 50px; display: none; }
+        .favorite-overlay { position: absolute; top: 10px; left: 10px; z-index: 10; cursor: pointer; }
+        .share-overlay { position: absolute; top: 40px; left: 10px; z-index: 10; cursor: pointer; }
+        .snapshot-overlay { position: absolute; top: 70px; left: 10px; z-index: 10; cursor: pointer; background: transparent; border: none; border-radius: 3px; padding: 1px; font-size: 18px; color: #fff; text-shadow: 0 0 3px black; }
+        .burst-overlay { position: absolute; top: 100px; left: 10px; z-index: 10; cursor: pointer; background: transparent; border: none; border-radius: 3px; padding: 1px; font-size: 18px; color: #fff; text-shadow: 0 0 3px black; }
+        .speed-overlay { position: absolute; top: 10px; right: 70px; z-index: 10; }
+        .loop-overlay { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 2px 5px; border-radius: 3px; font-size: 0.9em; color: #fff; }
+        .back-btn { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(0,0,0,0.7); color: #fff; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
+        .video-info { position: absolute; bottom: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); color: #fff; padding: 5px 10px; border-radius: 3px; font-size: 0.9em; }
+    </style>
+</head>
+<body class="bg-dark text-light">
+    {% include 'header.html' %}
+    <div class="video-container">
+        <video class="video-player" id="player" controls preload="auto" loop>
+            <source id="source" type="video/mp4">
+            <div class="error-overlay" id="error">Erro ao carregar o vídeo.</div>
+        </video>
+        <i class="favorite-overlay bi bi-star" id="favorite"></i>
+        <i class="share-overlay bi bi-share" id="share"></i>
+        <button class="snapshot-overlay" id="snapshot">📸</button>
+        <button class="burst-overlay" id="burst">🔄</button>
+        <select class="speed-overlay" id="speed">
+            <option value="1" selected>1x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+            <option value="2.5">2.5x</option>
+            <option value="3">3x</option>
+            <option value="4">4x</option>
+        </select>
+        <div class="loop-overlay">
+            <input type="checkbox" id="loop" checked>
+            <label for="loop" style="margin-left: 5px;">Loop</label>
+        </div>
+        <button class="back-btn" onclick="window.history.back()">Voltar</button>
+        <div class="video-info" id="videoInfo"></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/header.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoPath = urlParams.get('video');
+        let favorites = [];
+
+        async function loadVideo() {
+            if (!videoPath) {
+                document.getElementById('error').textContent = 'Vídeo não especificado.';
+                document.getElementById('error').style.display = 'block';
+                return;
+            }
+            const source = document.getElementById('source');
+            source.src = `/video/${encodeURIComponent(videoPath)}`;
+            const player = document.getElementById('player');
+            player.load();
+            player.onloadeddata = () => {
+                player.play().catch(() => {
+                    document.getElementById('error').style.display = 'block';
+                    setTimeout(() => document.getElementById('error').style.display = 'none', 5000);
+                });
+                document.getElementById('videoInfo').textContent = videoPath.split(/[\\/]/).pop();
+            };
+            player.onerror = () => {
+                document.getElementById('error').style.display = 'block';
+            };
+            updateFavoriteIcon();
+        }
+
+        async function loadFavorites() {
+            try {
+                const response = await fetch('/favorites');
+                favorites = await response.json();
+                updateFavoriteIcon();
+            } catch (e) {
+                console.error('Erro ao carregar favoritos:', e);
+            }
+        }
+
+        function updateFavoriteIcon() {
+            const favoriteIcon = document.getElementById('favorite');
+            const isFavorite = favorites.some(f => f.path === videoPath);
+            favoriteIcon.className = `favorite-overlay bi ${isFavorite ? 'bi-star-fill text-warning' : 'bi-star'}`;
+        }
+
+        async function toggleFavorite() {
+            const isFavorite = favorites.some(f => f.path === videoPath);
+            try {
+                const response = await fetch('/favorites', {
+                    method: isFavorite ? 'DELETE' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_path: videoPath })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    if (isFavorite) {
+                        favorites = favorites.filter(f => f.path !== videoPath);
+                        showNotification('Removido dos favoritos', false);
+                    } else {
+                        await loadFavorites(); // Reload to get metadata
+                        showNotification('Adicionado aos favoritos', false);
+                    }
+                    updateFavoriteIcon();
+                } else {
+                    showNotification(`Erro ao gerenciar favorito: ${result.error}`, true);
+                }
+            } catch (e) {
+                showNotification(`Erro ao gerenciar favorito: ${e.message}`, true);
+            }
+        }
+
+        async function shareVideo() {
+            const fileName = videoPath.split(/[\\/]/).pop();
+            try {
+                if (navigator.share) {
+                    await navigator.share({
+                        title: `EndoFlix Video: ${fileName}`,
+                        text: `Vídeo: ${videoPath}`
+                    });
+                } else {
+                    navigator.clipboard.writeText(videoPath).then(() => showNotification('Caminho copiado!', false));
+                }
+            } catch (e) {
+                showNotification(`Erro ao compartilhar: ${e.message}`, true);
+            }
+        }
+
+        async function createSnapshot() {
+            const player = document.getElementById('player');
+            const canvas = document.createElement('canvas');
+            canvas.width = player.videoWidth;
+            canvas.height = player.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(player, 0, 0, canvas.width, canvas.height);
+
+            try {
+                const imageData = canvas.toDataURL('image/webp', 0.9);
+                const response = await fetch('/save_snapshot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_path: videoPath,
+                        image_data: imageData,
+                        is_burst: false
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showNotification('Snapshot salvo com sucesso!', false);
+                } else {
+                    showNotification(`Erro ao salvar snapshot: ${result.error}`, true);
+                }
+            } catch (e) {
+                showNotification(`Erro ao salvar snapshot: ${e.message}`, true);
+            }
+        }
+
+        async function createBurst() {
+            const player = document.getElementById('player');
+            const burstCount = 5; // Fixed for simplicity
+            const intervalMs = 200;
+            const frames = [];
+            const canvas = document.createElement('canvas');
+            canvas.width = player.videoWidth;
+            canvas.height = player.videoHeight;
+            const ctx = canvas.getContext('2d');
+
+            for (let i = 0; i < burstCount; i++) {
+                ctx.drawImage(player, 0, 0, canvas.width, canvas.height);
+                frames.push(canvas.toDataURL('image/webp', 0.9));
+                await new Promise(resolve => setTimeout(resolve, intervalMs));
+            }
+
+            try {
+                const response = await fetch('/save_snapshot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_path: videoPath,
+                        frames: frames,
+                        is_burst: true
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showNotification(`Burst completo! ${frames.length} imagens salvas.`, false);
+                } else {
+                    showNotification(`Erro ao salvar burst: ${result.error}`, true);
+                }
+            } catch (e) {
+                showNotification(`Erro ao salvar burst: ${e.message}`, true);
+            }
+        }
+
+        function showNotification(message, isError = false) {
+            const notificationEl = document.createElement('div');
+            notificationEl.textContent = message;
+            notificationEl.style.position = 'fixed';
+            notificationEl.style.top = '10px';
+            notificationEl.style.right = '10px';
+            notificationEl.style.background = isError ? 'rgba(255,0,0,0.8)' : 'rgba(0,0,0,0.8)';
+            notificationEl.style.color = 'white';
+            notificationEl.style.padding = '10px';
+            notificationEl.style.borderRadius = '5px';
+            notificationEl.style.zIndex = '1000';
+            document.body.appendChild(notificationEl);
+            setTimeout(() => notificationEl.remove(), 3000);
+        }
+
+        document.getElementById('favorite').addEventListener('click', toggleFavorite);
+        document.getElementById('share').addEventListener('click', shareVideo);
+        document.getElementById('snapshot').addEventListener('click', createSnapshot);
+        document.getElementById('burst').addEventListener('click', createBurst);
+        document.getElementById('speed').addEventListener('change', () => {
+            document.getElementById('player').playbackRate = parseFloat(document.getElementById('speed').value);
+        });
+        document.getElementById('loop').addEventListener('change', () => {
+            document.getElementById('player').loop = document.getElementById('loop').checked;
+        });
+
+        document.getElementById('player').addEventListener('dblclick', () => {
+            const player = document.getElementById('player');
+            if (player.requestFullscreen) player.requestFullscreen();
+            else if (player.webkitRequestFullscreen) player.webkitRequestFullscreen();
+            else if (player.msRequestFullscreen) player.msRequestFullscreen();
+        });
+
+        loadVideo();
+        loadFavorites();
+    </script>
+</body>
+</html>

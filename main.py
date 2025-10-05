@@ -7,6 +7,7 @@ import logging
 import logging.config
 from pythonjsonlogger import jsonlogger
 import shutil
+from flask_socketio import SocketIO, emit
 
 class APIError(Exception):
     def __init__(self, message, status_code=400, payload=None):
@@ -73,6 +74,7 @@ from prometheus_flask_exporter import PrometheusMetrics
 from auth import login_manager
 
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
 limiter.init_app(app)
 metrics = PrometheusMetrics(app)
 
@@ -85,6 +87,7 @@ from blueprints.sessions import sessions_bp
 from blueprints.favorites import favorites_bp
 from blueprints.analytics import analytics_bp
 from blueprints.video import video_bp
+from services.ultra_control_service import init_ultra_service
 load_dotenv()
 app.secret_key = os.getenv('SECRET_KEY', 'endoFlix_secret_key_2024')
 TRANSCODE_DIR = Path("transcode")
@@ -93,6 +96,7 @@ REDIS_SERVER_PATH = Config.REDIS_SERVER_PATH
 REDIS_CLIENT = None
 REDIS_PROCESS = None
 DB_POOL = Database()  # Updated to use new Database class
+ultra_service = init_ultra_service(socketio, DB_POOL)
 
 # Flask-Login setup
 login_manager.login_view = 'auth.login'
@@ -107,6 +111,55 @@ app.register_blueprint(sessions_bp)
 app.register_blueprint(favorites_bp)
 app.register_blueprint(analytics_bp)
 app.register_blueprint(video_bp)
+
+# SocketIO event handlers
+@socketio.on('connect', namespace='/ultra')
+def handle_ultra_connect():
+    logging.info("Client connected to ultra namespace")
+    # Emit initial analytics data on connect
+    data = ultra_service._get_real_time_analytics()
+    emit('ultra_analytics_update', data)
+    emit('connected', {'status': 'Ultra mode connected'})
+
+@socketio.on('disconnect', namespace='/ultra')
+def handle_ultra_disconnect():
+    logging.info("Client disconnected from ultra namespace")
+
+@socketio.on('request_ultra_update', namespace='/ultra')
+def handle_ultra_update_request():
+    logging.info("Received request_ultra_update")
+    data = ultra_service._get_real_time_analytics()
+    logging.info(f"Emitting ultra_analytics_update with data: {data}")
+    emit('ultra_analytics_update', data)
+
+@socketio.on('ultra_command', namespace='/ultra')
+def handle_ultra_command(data):
+    try:
+        command = data.get('command')
+        if not command:
+            emit('ultra_command_response', {'success': False, 'error': 'No command provided'})
+            return
+        # Process single command
+        result = ultra_service._execute_command(data)
+        emit('ultra_command_response', {'success': True, 'command': command, 'result': result})
+        logging.info(f"Processed ultra command: {command}")
+    except Exception as e:
+        emit('ultra_command_response', {'success': False, 'error': str(e)})
+        logging.error(f"Error processing ultra command: {e}")
+
+@socketio.on('ultra_batch_commands', namespace='/ultra')
+def handle_ultra_batch_commands(data):
+    try:
+        commands = data.get('commands', [])
+        if not commands:
+            emit('ultra_batch_response', {'success': False, 'error': 'No commands provided'})
+            return
+        results = ultra_service.process_batch_commands(commands)
+        emit('ultra_batch_response', {'success': True, 'results': results})
+        logging.info(f"Processed {len(commands)} ultra batch commands")
+    except Exception as e:
+        emit('ultra_batch_response', {'success': False, 'error': str(e)})
+        logging.error(f"Error processing ultra batch commands: {e}")
 
 @app.errorhandler(APIError)
 def handle_api_error(error):
@@ -249,8 +302,10 @@ signal.signal(signal.SIGINT, signal_handler)
 if __name__ == '__main__':
     start_redis()
     init_redis()
+    ultra_service.start_real_time_updates()
     try:
-        app.run(port=5000)
+        socketio.run(app, port=5000)
     finally:
+        ultra_service.stop_real_time_updates()
         shutdown_redis()
         DB_POOL.closeall()

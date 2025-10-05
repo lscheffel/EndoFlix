@@ -20,6 +20,13 @@ Layout com 4 players em grade 2x2.
 Barra lateral ajustável para playlists/sessões.
 Filtros por nome e ordenação (A-Z, data).
 
+Ultra Mode: Dashboard analítico com estatísticas em tempo real, gráficos de uso de playlists, tipos de arquivo, timeline de sessões e tabela de vídeos mais reproduzidos. Exportação de relatórios em CSV.
+Sistema de Autenticação: Login e gerenciamento de usuários.
+Processamento de Vídeos Cross-Platform: Usando python-ffmpeg para extração de metadados e processamento.
+Cabeçalho Comum: Design consistente de cabeçalho em toda a aplicação.
+Player de Vídeo Dedicado: Página dedicada para reprodução de vídeos individuais.
+Operações em Lote: Execute ações em vários vídeos de uma vez, como adicionar/remover favoritos, remover de playlists.
+
 Botão de Pânico: Abre um site aleatório (ex.: Google, YouTube) em caso de emergência.
 Logs Detalhados: Debug facilitado com logs no backend e frontend.
 
@@ -77,8 +84,54 @@ Verifique as credenciais: usuário postgres, senha admin, host localhost, porta 
 
 Estrutura do projeto:
 
-Coloque main.py na raiz.
-Coloque base.html na pasta templates/ (crie a pasta se não existir).
+EndoFlix/
+├── main.py                    # Backend Flask principal
+├── config.py                  # Configurações da aplicação
+├── auth.py                    # Sistema de autenticação
+├── db.py                      # Conexão e operações do banco de dados
+├── models.py                  # Modelos de dados
+├── utils.py                   # Utilitários diversos
+├── file_processor.py          # Processamento de arquivos de vídeo
+├── cache.py                   # Sistema de cache com Redis
+├── limiter.py                 # Controle de taxa de requisições
+├── blueprints/                # Módulos da aplicação
+│   ├── __init__.py
+│   ├── main.py                # Rotas principais
+│   ├── auth.py                # Autenticação
+│   ├── analytics.py           # Analytics e Ultra Mode
+│   ├── favorites.py           # Favoritos
+│   ├── playlists.py           # Playlists
+│   ├── scan.py                # Escaneamento
+│   ├── sessions.py            # Sessões
+│   └── video.py               # Vídeo
+├── services/                  # Serviços
+│   ├── playlist_service.py
+│   └── ultra_control_service.py
+├── Static/                    # Arquivos estáticos
+│   ├── favicon.ico
+│   ├── js/
+│   │   ├── header.js
+│   │   └── ultra/
+│   │       ├── app.js
+│   │       ├── controls.js
+│   │       ├── dashboard.js
+│   │       └── websocket.js
+│   └── keymap.js
+├── Templates/                 # Templates HTML
+│   ├── base.html
+│   ├── header.html
+│   ├── login.html
+│   ├── player.html
+│   ├── ultra.html
+│   └── keymaps.html
+├── tests/                     # Testes
+├── logs/                      # Logs da aplicação
+├── monitoring/                # Monitoramento
+│   └── prometheus.yml
+├── scripts/                   # Scripts auxiliares
+│   └── init.sql
+├── transcode/                 # Transcodificação
+└── videos/                    # Vídeos (opcional)
 
 
 Rode o servidor:
@@ -128,13 +181,55 @@ Frontend: Salvando sessão: 2025-05-11T04-37-34_Sem Playlist com 4 vídeos.
 
 Estrutura do Projeto
 EndoFlix/
-├── main.py               # Backend Flask
-├── templates/
-│   └── base.html         # Frontend HTML/JS/CSS
-├── venv/                 # Ambiente virtual (opcional)
-└── README.md             # Este arquivo
+├── main.py               # Backend Flask principal
+├── config.py             # Configurações
+├── auth.py               # Autenticação
+├── db.py                 # Banco de dados
+├── models.py             # Modelos
+├── utils.py              # Utilitários
+├── file_processor.py     # Processamento de vídeos
+├── cache.py              # Cache Redis
+├── limiter.py            # Rate limiting
+├── blueprints/           # Módulos
+│   ├── __init__.py
+│   ├── main.py
+│   ├── auth.py
+│   ├── analytics.py
+│   ├── favorites.py
+│   ├── playlists.py
+│   ├── scan.py
+│   ├── sessions.py
+│   └── video.py
+├── services/             # Serviços
+│   ├── playlist_service.py
+│   └── ultra_control_service.py
+├── Static/               # Estáticos
+│   ├── js/
+│   └── favicon.ico
+├── Templates/            # Templates
+│   ├── base.html
+│   ├── header.html
+│   ├── login.html
+│   ├── player.html
+│   ├── ultra.html
+│   └── keymaps.html
+├── tests/                # Testes
+├── logs/                 # Logs
+├── monitoring/           # Monitoramento
+├── scripts/              # Scripts
+├── transcode/            # Transcodificação
+└── videos/               # Vídeos (opcional)
 
 Versões
+
+v5.1.0 (2025-10-05):
+Adicionado Ultra Mode com analytics em tempo real.
+Sistema de autenticação completo.
+Processamento de vídeos cross-platform com python-ffmpeg.
+Cabeçalho comum em todas as páginas.
+Player de vídeo dedicado.
+Operações em lote para gerenciamento de vídeos.
+Removidas referências a thumbnails descontinuadas.
 
 v5.0.0 (2025-10-03):
 Sistema completo de autenticação e segurança.
@@ -153,7 +248,6 @@ Refatoração completa: removeu JSON, implementou PostgreSQL.
 Corrigido gerenciamento de playlists e sessões.
 Shuffles individuais e auto shuffle.
 Logs detalhados.
-
 
 v2.0.0:
 Correções de layout e suporte a codecs (H.264).

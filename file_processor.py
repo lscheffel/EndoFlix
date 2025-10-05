@@ -1,6 +1,5 @@
 import os
 import hashlib
-import subprocess
 import json
 import mmap
 import logging
@@ -11,6 +10,7 @@ from config import Config
 from cache import RedisCache
 from db import Database
 from typing import List, Dict, Any, Optional
+import ffmpeg
 
 class FileProcessor:
     def __init__(self):
@@ -73,16 +73,18 @@ class FileProcessor:
 
         for attempt in range(Config.MAX_RETRIES):
             try:
-                cmd = [Config.FFPROBE_PATH, "-v", "error", "-show_entries", 
-                      "stream=codec_type,codec_name,width,height,duration", 
-                      "-of", "json", file_path]
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                metadata = self._parse_ffprobe_output(result.stdout)
+                probe = ffmpeg.probe(file_path)
+                metadata = self._parse_ffprobe_output(probe)
                 self.cache.set_metadata(file_path, metadata)
                 self._ffprobe_cache[file_path] = metadata
                 return metadata
-            except subprocess.CalledProcessError as e:
-                logging.error(f"Erro ao executar ffprobe (tentativa {attempt + 1}): {e}")
+            except ffmpeg.Error as e:
+                logging.error(f"Erro ao executar ffmpeg probe (tentativa {attempt + 1}): {e}")
+                if attempt == Config.MAX_RETRIES - 1:
+                    break
+                time.sleep(Config.RETRY_DELAY * (attempt + 1))
+            except Exception as e:
+                logging.error(f"Erro inesperado ao extrair metadata (tentativa {attempt + 1}): {e}")
                 if attempt == Config.MAX_RETRIES - 1:
                     break
                 time.sleep(Config.RETRY_DELAY * (attempt + 1))
@@ -94,27 +96,29 @@ class FileProcessor:
             "video_codec": "unknown"
         }
 
-    def _parse_ffprobe_output(self, output: str) -> Dict[str, Any]:
+    def _parse_ffprobe_output(self, probe_data: dict) -> Dict[str, Any]:
         try:
-            data = json.loads(output)
-            streams = data.get("streams", [])
+            streams = probe_data.get("streams", [])
             video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
-            
-            duration = float(video_stream.get("duration", 0))
+
+            # Get duration from stream or format
+            duration_str = video_stream.get("duration") or probe_data.get("format", {}).get("duration", "0")
+            duration = float(duration_str) if duration_str else 0
+
             width = video_stream.get("width", 0)
             height = video_stream.get("height", 0)
             resolution = f"{width}x{height}" if width and height else "unknown"
             orientation = "portrait" if width < height else "landscape" if width > height else "square"
             video_codec = video_stream.get("codec_name", "unknown")
-            
+
             return {
                 "duration_seconds": duration,
                 "resolution": resolution,
                 "orientation": orientation,
                 "video_codec": video_codec
             }
-        except json.JSONDecodeError as e:
-            logging.error(f"Erro ao decodificar saída do ffprobe: {e}")
+        except Exception as e:
+            logging.error(f"Erro ao processar dados do ffmpeg probe: {e}")
             return {
                 "duration_seconds": 0,
                 "resolution": "unknown",

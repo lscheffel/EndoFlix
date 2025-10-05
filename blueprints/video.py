@@ -5,6 +5,7 @@ import base64
 import json
 import logging
 from datetime import datetime
+from urllib.parse import unquote
 from flask_login import login_required
 from db import Database
 from config import Config
@@ -22,6 +23,9 @@ video_views_counter = Counter('video_views', 'Number of video views')
 @video_bp.route('/video/<path:filename>')
 @login_required
 def serve_video(filename):
+    filename = unquote(filename)
+    if filename.startswith('/'):
+        filename = filename.lstrip('/')
     return serve_video_range(Path(filename))
 
 def serve_video_range(input_path):
@@ -52,6 +56,7 @@ def serve_video_range(input_path):
                     index_file(conn, file_data)
                 cur.execute("UPDATE endoflix_files SET view_count = view_count + 1, last_viewed_at = CURRENT_TIMESTAMP WHERE file_path = %s", (input_path_str,))
                 conn.commit()
+                logging.info(f"Incremented view_count for {input_path_str}")
             except Exception as e:
                 conn.rollback()
                 logging.error(f"Erro ao atualizar visualizações para {input_path_str}: {e}")

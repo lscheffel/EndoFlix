@@ -22,3 +22,8 @@ def ultra():
 @login_required
 def keymaps():
     return render_template('keymaps.html')
+
+@main_bp.route('/player')
+@login_required
+def player():
+    return render_template('player.html')
