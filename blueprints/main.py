@@ -18,6 +18,11 @@ def about():
 def ultra():
     return render_template('ultra.html')
 
+@main_bp.route('/tube')
+@login_required
+def tube():
+    return render_template('tube.html')
+
 @main_bp.route('/keymaps')
 @login_required
 def keymaps():

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EndoFlix - Tube Mode</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { overflow: hidden; background: #000; color: #fff; }
+        .theme-toggle { cursor: pointer; }
+        .thumbnail-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 15px;
+            padding: 20px;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+        .thumbnail-item {
+            position: relative;
+            cursor: pointer;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #333;
+            transition: transform 0.2s;
+        }
+        .thumbnail-item:hover {
+            transform: scale(1.05);
+        }
+        .thumbnail-img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            display: block;
+        }
+        .thumbnail-title {
+            padding: 8px;
+            font-size: 0.8em;
+            text-align: center;
+            background: rgba(0,0,0,0.7);
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .preview-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            display: none;
+            pointer-events: none;
+        }
+        .thumbnail-item:hover .preview-video {
+            opacity: 1;
+        }
+        .controls-section {
+            padding: 15px;
+            background: #222;
+            border-bottom: 1px solid #444;
+        }
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .load-more-btn {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .load-more-btn:hover {
+            background: #0056b3;
+        }
+        .lazy-load {
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .lazy-load.loaded {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-dark text-light">
+    {% include 'header.html' %}
+
+    <div class="controls-section">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <select id="playlistSelect" class="form-select">
+                    <option value="">Todos</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <input type="text" id="searchInput" class="form-control" placeholder="Buscar por nome">
+            </div>
+            <div class="col-md-2">
+                <select id="extensionFilter" class="form-select">
+                    <option value="">Todas as extensões</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select id="sortSelect" class="form-select">
+                    <option value="name-asc">Nome A-Z</option>
+                    <option value="name-desc">Nome Z-A</option>
+                    <option value="date-asc">Data crescente</option>
+                    <option value="date-desc">Data decrescente</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button id="applyFiltersBtn" class="btn btn-primary w-100">Aplicar Filtros</button>
+            </div>
+        </div>
+        <div class="row g-3 mt-2">
+            <div class="col-md-3">
+                <input type="number" id="sizeMin" placeholder="Tamanho min (MB)" class="form-control">
+            </div>
+            <div class="col-md-3">
+                <input type="number" id="sizeMax" placeholder="Tamanho max (MB)" class="form-control">
+            </div>
+            <div class="col-md-3">
+                <input type="date" id="dateFrom" class="form-control">
+            </div>
+            <div class="col-md-3">
+                <input type="date" id="dateTo" class="form-control">
+            </div>
+        </div>
+    </div>
+
+    <div id="thumbnailGrid" class="thumbnail-grid">
+        <!-- Thumbnails will be loaded here -->
+    </div>
+
+    <div id="loadingSpinner" class="loading-spinner">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Carregando...</span>
+        </div>
+        <div>Carregando vídeos...</div>
+    </div>
+
+    <div id="loadingMoreSpinner" class="loading-spinner" style="display: none;">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Carregando mais...</span>
+        </div>
+        <div>Carregando mais vídeos...</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/header.js"></script>
+    <script>
+        let allVideos = [];
+        let filteredVideos = [];
+        let currentPage = 0;
+        const itemsPerPage = 50;
+        let isLoading = false;
+        // Initialize Intersection Observer for infinite scroll
+        function initLazyLoading() {
+            // Removed lazy loading for images, now using video posters
+        }
+
+        // Load playlists
+        async function loadPlaylists() {
+            try {
+                const response = await fetch('/playlists');
+                const playlists = await response.json();
+                const select = document.getElementById('playlistSelect');
+                select.innerHTML = '<option value="">Todos</option>';
+                for (const name in playlists) {
+                    if (!name.startsWith('temp_')) {
+                        const option = document.createElement('option');
+                        option.value = name;
+                        option.textContent = name;
+                        select.appendChild(option);
+                    }
+                }
+            } catch (e) {
+                console.error('Erro ao carregar playlists:', e);
+            }
+        }
+
+        // Load videos based on playlist selection
+        async function loadVideos(playlistName = '') {
+            console.log('loadVideos called with:', playlistName);
+            const spinner = document.getElementById('loadingSpinner');
+            spinner.style.display = 'block';
+            isLoading = true;
+
+            try {
+                let videos = [];
+                if (playlistName === '' || playlistName === 'Todos') {
+                    console.log('Loading all videos...');
+                    // Load all videos - this might need optimization for large datasets
+                    const response = await fetch('/all_videos');
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    videos = await response.json();
+                    console.log('Loaded videos:', videos.length);
+                } else {
+                    const response = await fetch('/playlists');
+                    const playlists = await response.json();
+                    videos = playlists[playlistName] ? playlists[playlistName].files : [];
+                }
+
+                allVideos = videos;
+                filteredVideos = [...allVideos];
+                currentPage = 0;
+                document.getElementById('thumbnailGrid').innerHTML = '';
+                applyFilters();
+                loadMoreVideos();
+            } catch (e) {
+                console.error('Erro ao carregar vídeos:', e);
+            } finally {
+                spinner.style.display = 'none';
+                isLoading = false;
+            }
+        }
+
+        // Apply filters
+        function applyFilters() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const extension = document.getElementById('extensionFilter').value;
+            const sizeMin = parseFloat(document.getElementById('sizeMin').value) || 0;
+            const sizeMax = parseFloat(document.getElementById('sizeMax').value) || Infinity;
+            const dateFrom = document.getElementById('dateFrom').value ? new Date(document.getElementById('dateFrom').value) : null;
+            const dateTo = document.getElementById('dateTo').value ? new Date(document.getElementById('dateTo').value) : null;
+            const sortValue = document.getElementById('sortSelect').value;
+
+            filteredVideos = allVideos.filter(video => {
+                const path = video.path || video;
+                const name = path.split(/[\\/]/).pop().toLowerCase();
+                const ext = path.split('.').pop().toLowerCase();
+                const size = (video.size || 0) / (1024*1024); // MB
+                const modified = video.modified ? new Date(video.modified) : null;
+
+                return name.includes(searchTerm) &&
+                       (!extension || ext === extension) &&
+                       size >= sizeMin && size <= sizeMax &&
+                       (!dateFrom || (modified && modified >= dateFrom)) &&
+                       (!dateTo || (modified && modified <= dateTo));
+            });
+
+            // Apply sorting
+            const [field, order] = sortValue.split('-');
+            if (field === 'name') {
+                filteredVideos.sort((a, b) => {
+                    const nameA = (a.path || a).split(/[\\/]/).pop().toLowerCase();
+                    const nameB = (b.path || b).split(/[\\/]/).pop().toLowerCase();
+                    return order === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+                });
+            } else if (field === 'date') {
+                filteredVideos.sort((a, b) => {
+                    const dateA = a.modified ? new Date(a.modified) : new Date(0);
+                    const dateB = b.modified ? new Date(b.modified) : new Date(0);
+                    return order === 'asc' ? dateA - dateB : dateB - dateA;
+                });
+            }
+
+            currentPage = 0;
+            document.getElementById('thumbnailGrid').innerHTML = '';
+            loadMoreVideos();
+        }
+
+        // Load more videos (pagination)
+        function loadMoreVideos() {
+            if (isLoading) return;
+            isLoading = true;
+
+            const loadingMoreSpinner = document.getElementById('loadingMoreSpinner');
+            loadingMoreSpinner.style.display = 'block';
+
+            setTimeout(() => {
+                const start = currentPage * itemsPerPage;
+                const end = start + itemsPerPage;
+                const videosToLoad = filteredVideos.slice(start, end);
+
+                videosToLoad.forEach(video => {
+                    createThumbnail(video);
+                });
+
+                currentPage++;
+                isLoading = false;
+                loadingMoreSpinner.style.display = 'none';
+            }, 500); // Small delay for smooth UX
+        }
+
+        // Infinite scroll implementation
+        function setupInfiniteScroll() {
+            const options = {
+                root: null,
+                rootMargin: '100px',
+                threshold: 0.1
+            };
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting && !isLoading) {
+                        const totalLoaded = currentPage * itemsPerPage;
+                        if (totalLoaded < filteredVideos.length) {
+                            loadMoreVideos();
+                        }
+                    }
+                });
+            }, options);
+
+            // Create a sentinel element at the bottom
+            const sentinel = document.createElement('div');
+            sentinel.id = 'scroll-sentinel';
+            sentinel.style.height = '10px';
+            document.body.appendChild(sentinel);
+
+            observer.observe(sentinel);
+        }
+
+        // Create thumbnail element
+        function createThumbnail(video) {
+            const path = video.path || video;
+            const fileName = path.split(/[\\/]/).pop();
+
+            const item = document.createElement('div');
+            item.className = 'thumbnail-item';
+            item.onclick = () => openPlayer(path);
+
+            item.innerHTML = `
+                <video class="thumbnail-img" poster="" muted>
+                    <source src="/video/preview/${encodeURIComponent(path)}" type="video/mp4">
+                </video>
+                <video class="preview-video" muted loop preload="none">
+                    <source src="/video/preview/${encodeURIComponent(path)}" type="video/mp4">
+                </video>
+                <p class="thumbnail-title">${fileName}</p>
+            `;
+
+            document.getElementById('thumbnailGrid').appendChild(item);
+
+            // Handle hover for preview
+            const previewVideo = item.querySelector('.preview-video');
+            const thumbnailVideo = item.querySelector('.thumbnail-img');
+
+            // Set thumbnail to show first frame
+            thumbnailVideo.addEventListener('loadedmetadata', () => {
+                thumbnailVideo.currentTime = 1; // Seek to 1 second for thumbnail
+            });
+
+            item.addEventListener('mouseenter', () => {
+                previewVideo.style.display = 'block';
+                thumbnailVideo.style.display = 'none';
+                previewVideo.currentTime = 0;
+                previewVideo.play().catch(() => {});
+            });
+            item.addEventListener('mouseleave', () => {
+                previewVideo.pause();
+                previewVideo.style.display = 'none';
+                thumbnailVideo.style.display = 'block';
+            });
+        }
+
+        // Open player page
+        function openPlayer(videoPath) {
+            const url = `/player?video=${encodeURIComponent(videoPath)}`;
+            window.location.href = url;
+        }
+
+        // Populate extension filter
+        function populateExtensions() {
+            const extensions = new Set();
+            allVideos.forEach(video => {
+                const path = video.path || video;
+                const ext = path.split('.').pop().toLowerCase();
+                extensions.add(ext);
+            });
+
+            const select = document.getElementById('extensionFilter');
+            select.innerHTML = '<option value="">Todas as extensões</option>';
+            extensions.forEach(ext => {
+                const option = document.createElement('option');
+                option.value = ext;
+                option.textContent = ext.toUpperCase();
+                select.appendChild(option);
+            });
+        }
+
+        // Event listeners
+        document.getElementById('playlistSelect').addEventListener('change', (e) => {
+            loadVideos(e.target.value);
+        });
+
+        document.getElementById('applyFiltersBtn').addEventListener('click', applyFilters);
+
+        // Initialize
+        initLazyLoading();
+        setupInfiniteScroll();
+        loadPlaylists();
+        loadVideos();
+    </script>
+</body>
+</html>
